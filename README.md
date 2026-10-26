@@ -38,9 +38,17 @@ uv run python scripts/ledger.py balances
 uv run pytest
 ```
 
-## Health endpoint
+## API
 
 ```bash
 uv run uvicorn ugharani.main:app --reload
+
 curl http://localhost:8000/health
+curl -F "audio=@out/tts_test.wav" http://localhost:8000/entries/voice   # 1 Prisma call
+curl http://localhost:8000/entries
+curl http://localhost:8000/balances
 ```
+
+`POST /entries/voice` transcribes the clip with Prisma (gu-IN, ITN on, known buyer names
+sent as `bias_list`), parses it, and saves the entry if buyer, amount and due date are all
+present. Otherwise it returns `missing` and saves nothing.

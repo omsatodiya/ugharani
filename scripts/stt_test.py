@@ -4,14 +4,14 @@ Usage: uv run python scripts/stt_test.py [audio_file] [--expect 240000]
 """
 
 import argparse
+import asyncio
 import sys
 import time
 from pathlib import Path
 
-import httpx
-
 from ugharani.amounts import find_amounts
 from ugharani.config import get_settings
+from ugharani.gnani import GnaniError, transcribe
 
 
 def main() -> None:
@@ -22,27 +22,13 @@ def main() -> None:
                         help="amount that should appear in the transcript (0 to skip)")
     args = parser.parse_args()
 
-    s = get_settings()
-    form = {
-        "language_code": s.language,
-        "format": "transcribe",  # enables ITN: numbers, ₹, dates -> digits
-    }
-
-    print(f"STT {args.audio} [{s.language}]")
+    print(f"STT {args.audio} [{get_settings().language}]")
     start = time.perf_counter()
-    with args.audio.open("rb") as f:
-        resp = httpx.post(
-            f"{s.gnani_base_url}/stt/v3",
-            headers=s.auth_headers,
-            data=form,
-            files={"audio_file": (args.audio.name, f)},
-            timeout=60,
-        )
+    try:
+        payload = asyncio.run(transcribe(args.audio.read_bytes(), args.audio.name))
+    except GnaniError as e:
+        raise SystemExit(str(e))
     latency = time.perf_counter() - start
-
-    payload = resp.json()
-    if resp.status_code != 200 or not payload.get("success"):
-        raise SystemExit(f"HTTP {resp.status_code}: {payload}")
 
     transcript = payload["transcript"]
     print(f"Transcript: {transcript}")
