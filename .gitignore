@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# audio outputs
+out/
+*.wav
+*.mp3
+*.ogg
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
