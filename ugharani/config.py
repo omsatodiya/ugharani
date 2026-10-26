@@ -32,3 +32,8 @@ def get_settings() -> Settings:
         tts_voice=os.getenv("TTS_VOICE", "Shivani"),
         language=os.getenv("LANGUAGE", "gu-IN"),
     )
+
+
+def ledger_db_path() -> str:
+    """SQLite file for the ledger. Separate from Settings so it works without an API key."""
+    return os.getenv("LEDGER_DB", "ugharani.db")

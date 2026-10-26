@@ -7,6 +7,9 @@ out/
 *.mp3
 *.ogg
 
+# ledger database
+*.db
+
 # python
 .venv/
 venv/

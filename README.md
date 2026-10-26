@@ -26,6 +26,18 @@ uv run python scripts/stt_test.py
 uv run python scripts/stt_test.py path/to/recording.wav --expect 240000
 ```
 
+## Ledger (text only, no API calls)
+
+Rule-based extraction pulls out buyer, amount and due date and saves the entry to SQLite (`ugharani.db`).
+
+```bash
+uv run python scripts/ledger.py add "Rameshbhai ne be lakh chaalis hazaar nu maal aapyu, saath divas"
+uv run python scripts/ledger.py add "રમેશભાઈએ ₹50,000 જમા કરાવ્યા"   # payment received
+uv run python scripts/ledger.py list
+uv run python scripts/ledger.py balances
+uv run pytest
+```
+
 ## Health endpoint
 
 ```bash
