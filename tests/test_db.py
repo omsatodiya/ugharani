@@ -21,6 +21,18 @@ def test_balance_is_credits_minus_payments(tmp_path):
     assert rows == {"Rameshbhai": (190000, "2026-12-25"), "Kantaben": (75000, "2026-11-25")}
 
 
+def test_spelling_variants_share_one_balance(tmp_path):
+    conn = db.connect(str(tmp_path / "ledger.db"))
+    for text in [
+        "રમેશભાઈ ને ₹2,40,000 નું માલ આપ્યું, 60 દિવસ",  # Prisma output
+        "Rameshbhai e 50,000 jama karavya",               # typed
+        "રામેશભાઈએ ₹40,000 જમા કરાવ્યા",                   # STT vowel slip
+    ]:
+        db.add_entry(conn, parse(text, today=TODAY), text, today=TODAY)
+
+    assert [(r["buyer"], r["balance"]) for r in db.balances(conn)] == [("રમેશભાઈ", 150000)]
+
+
 def test_incomplete_entry_is_rejected(tmp_path):
     conn = db.connect(str(tmp_path / "ledger.db"))
     with pytest.raises(ValueError):

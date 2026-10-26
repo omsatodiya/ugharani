@@ -5,6 +5,7 @@ from datetime import date
 
 from ugharani.config import ledger_db_path
 from ugharani.extract import ParsedEntry
+from ugharani.names import match
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
@@ -27,6 +28,15 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def known_buyers(conn: sqlite3.Connection) -> list[str]:
+    return [r[0] for r in conn.execute("SELECT buyer FROM entries GROUP BY buyer ORDER BY MIN(id)")]
+
+
+def resolve_buyer(conn: sqlite3.Connection, name: str) -> str:
+    """Use the existing spelling if this buyer is already in the ledger."""
+    return match(name, known_buyers(conn)) or name
+
+
 def add_entry(conn: sqlite3.Connection, entry: ParsedEntry, transcript: str, today: date | None = None) -> int:
     if not entry.complete:
         raise ValueError(f"entry is missing {entry.missing}")
@@ -34,7 +44,7 @@ def add_entry(conn: sqlite3.Connection, entry: ParsedEntry, transcript: str, tod
         "INSERT INTO entries (kind, buyer, amount, entry_date, due_date, transcript) VALUES (?, ?, ?, ?, ?, ?)",
         (
             entry.kind,
-            entry.buyer,
+            resolve_buyer(conn, entry.buyer),
             entry.amount,
             (today or date.today()).isoformat(),
             entry.due_date.isoformat() if entry.due_date else None,

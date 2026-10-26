@@ -31,6 +31,8 @@ def main() -> None:
               f"due={entry.due_date} ({entry.due_days} days)")
         if entry.missing:
             raise SystemExit(f"Not saved, missing: {', '.join(entry.missing)}")
+        if (existing := db.resolve_buyer(conn, entry.buyer)) != entry.buyer:
+            print(f"Matched existing buyer: {existing}")
         if not args.dry_run:
             print(f"Saved entry #{db.add_entry(conn, entry, args.text)}")
     elif args.cmd == "list":
