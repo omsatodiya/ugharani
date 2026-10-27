@@ -28,12 +28,25 @@ def get_settings() -> Settings:
     return Settings(
         gnani_api_key=key,
         gnani_base_url=os.getenv("GNANI_BASE_URL", "https://api.vachana.ai").rstrip("/"),
-        tts_model=os.getenv("TTS_MODEL", "timbre-v3.0"),
-        tts_voice=os.getenv("TTS_VOICE", "Shivani"),
+        tts_model=tts_model(),
+        tts_voice=tts_voice(),
         language=os.getenv("LANGUAGE", "gu-IN"),
     )
+
+
+def tts_model() -> str:
+    return os.getenv("TTS_MODEL", "timbre-v3.0")
+
+
+def tts_voice() -> str:
+    return os.getenv("TTS_VOICE", "Shivani")
 
 
 def ledger_db_path() -> str:
     """SQLite file for the ledger. Separate from Settings so it works without an API key."""
     return os.getenv("LEDGER_DB", "ugharani.db")
+
+
+def audio_cache_dir() -> str:
+    """Where synthesised clips are cached, so each sentence costs Timbre credits once."""
+    return os.getenv("AUDIO_CACHE", "out/tts")

@@ -168,15 +168,40 @@ def parse(transcript: str, today: date | None = None) -> ParsedEntry:
         due_days = None
     buyer = _find_buyer(tokens)
 
-    missing = [name for name, val in (("buyer", buyer), ("amount", amount)) if val is None]
-    if kind == "credit" and due_days is None:
-        missing.append("due_date")
-
+    due_date = today + timedelta(days=due_days) if due_days is not None else None
     return ParsedEntry(
         kind=kind,
         buyer=buyer,
         amount=amount,
         due_days=due_days,
-        due_date=today + timedelta(days=due_days) if due_days is not None else None,
-        missing=missing,
+        due_date=due_date,
+        missing=missing_fields(kind, buyer, amount, due_date),
+    )
+
+
+def missing_fields(kind: str, buyer: str | None, amount: int | None, due_date: date | None) -> list[str]:
+    missing = [name for name, val in (("buyer", buyer), ("amount", amount)) if val is None]
+    if kind == "credit" and due_date is None:
+        missing.append("due_date")
+    return missing
+
+
+def merge(draft: ParsedEntry, answer: ParsedEntry) -> ParsedEntry:
+    """Fill a draft's missing fields from a follow-up answer ('60 divas', 'Rameshbhai').
+
+    Fields the draft already has are kept, and so is its kind: a bare answer
+    always parses as a credit.
+    """
+    buyer = draft.buyer or answer.buyer
+    amount = draft.amount if draft.amount is not None else answer.amount
+    due_days, due_date = draft.due_days, draft.due_date
+    if draft.kind == "credit" and due_date is None:
+        due_days, due_date = answer.due_days, answer.due_date
+    return ParsedEntry(
+        kind=draft.kind,
+        buyer=buyer,
+        amount=amount,
+        due_days=due_days,
+        due_date=due_date,
+        missing=missing_fields(draft.kind, buyer, amount, due_date),
     )

@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from ugharani.extract import parse
+from ugharani.extract import merge, parse
 
 TODAY = date(2026, 10, 26)
 
@@ -47,3 +47,19 @@ def test_missing_fields_are_reported():
     e = parse("Rameshbhai ne maal aapyu", today=TODAY)
     assert e.missing == ["amount", "due_date"]
     assert not e.complete
+
+
+def test_follow_up_answer_fills_only_the_missing_field():
+    draft = parse("રમેશભાઈ ને ₹2,40,000 નું માલ આપ્યું", today=TODAY)
+    filled = merge(draft, parse("60 દિવસ", today=TODAY))
+    assert (filled.buyer, filled.amount, filled.due_days, filled.missing) == ("રમેશભાઈ", 240000, 60, [])
+
+    # an answer can't overwrite what the draft already has
+    again = merge(filled, parse("Kantaben ne 5,000, 10 divas", today=TODAY))
+    assert (again.buyer, again.amount, again.due_days) == ("રમેશભાઈ", 240000, 60)
+
+
+def test_payment_draft_stays_a_payment_and_needs_no_due_date():
+    draft = parse("રમેશભાઈએ પૈસા જમા કરાવ્યા", today=TODAY)
+    filled = merge(draft, parse("₹50,000", today=TODAY))
+    assert (filled.kind, filled.amount, filled.due_date, filled.missing) == ("payment", 50000, None, [])

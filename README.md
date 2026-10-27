@@ -44,11 +44,27 @@ uv run pytest
 uv run uvicorn ugharani.main:app --reload
 
 curl http://localhost:8000/health
-curl -F "audio=@out/tts_test.wav" http://localhost:8000/entries/voice   # 1 Prisma call
+curl -F "audio=@out/tts_test.wav" http://localhost:8000/entries/voice   # 1 Prisma call + 1 Timbre call (cached)
+curl -H "Content-Type: application/json" -d '<draft from above>' http://localhost:8000/entries
 curl http://localhost:8000/entries
 curl http://localhost:8000/balances
+curl "http://localhost:8000/summary?today=2026-11-30"                     # 1 Timbre call per new sentence
+curl http://localhost:8000/reminders/Rameshbhai
 ```
 
-`POST /entries/voice` transcribes the clip with Prisma (gu-IN, ITN on, known buyer names
-sent as `bias_list`), parses it, and saves the entry if buyer, amount and due date are all
-present. Otherwise it returns `missing` and saves nothing.
+Voice entry is a short conversation, and nothing is saved until the trader confirms:
+
+1. `POST /entries/voice` transcribes the clip with Prisma (gu-IN, ITN on, known buyer names
+   sent as `bias_list`) and returns a `draft`, the `missing` fields, and what to `say` back,
+   with an `audio` URL for it spoken by Timbre.
+2. If a field is missing, `say` asks for it ("કેટલા દિવસની મુદત?"). Record the answer and send it
+   with the `draft` form field (the previous draft as JSON), and it fills the gap.
+3. Once nothing is missing, `say` reads the entry back ("રમેશભાઈને ₹2,40,000નો માલ, 60 દિવસની મુદત. બરાબર?").
+   `POST /entries` with the draft saves it.
+
+`GET /summary` lists what is overdue, due today and due in the next 3 days, plus a spoken summary.
+`GET /reminders/{buyer}` gives a polite reminder for one buyer, for the trader to send themselves.
+Payments settle a buyer's oldest credits first. Both take `?today=YYYY-MM-DD` so a demo can jump ahead.
+
+Every Timbre clip is cached in `out/tts/` by sentence, so repeating a sentence costs no credits.
+`GET /audio/{key}.wav` serves those clips.
