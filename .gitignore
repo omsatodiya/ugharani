@@ -6,6 +6,7 @@ out/
 *.wav
 *.mp3
 *.ogg
+!ugharani/clips/*.wav
 
 # ledger database
 *.db
@@ -16,3 +17,6 @@ venv/
 __pycache__/
 *.pyc
 *.egg-info/
+
+# tool state
+.serena/

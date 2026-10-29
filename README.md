@@ -68,3 +68,23 @@ Payments settle a buyer's oldest credits first. Both take `?today=YYYY-MM-DD` so
 
 Every Timbre clip is cached in `out/tts/` by sentence, so repeating a sentence costs no credits.
 `GET /audio/{key}.wav` serves those clips.
+
+## App and deploy
+
+`uv run uvicorn ugharani.main:app` also serves the PWA at http://localhost:8000: tap the mic,
+speak an entry, answer any question, confirm. The browser records 16 kHz WAV for Prisma.
+Phones only allow the mic over HTTPS, so test on a phone against the deployed app.
+
+Deployed on Render's free tier with the `Dockerfile` (`render.yaml` describes the service;
+set `GNANI_API_KEY` in the Render dashboard). The free disk is wiped whenever the service
+sleeps, so the image starts from sample buyers (`DEMO_SEED=1`) and ships clips of fixed
+sentences in `ugharani/clips/`:
+
+```bash
+uv run python scripts/ledger.py seed                 # sample buyers, locally
+uv run python scripts/bundle_clips.py                # copy cached fixed clips into ugharani/clips/
+uv run python scripts/bundle_clips.py --synthesize   # also make missing ones (1 Timbre call each)
+```
+
+`GNANI_DAILY_LIMIT` (default 150) caps Prisma + Timbre calls per server per day, so a public
+link can't drain the credits.

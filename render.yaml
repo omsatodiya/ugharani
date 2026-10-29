@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: ugharani
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GNANI_API_KEY
+        sync: false   # set in the Render dashboard, never in git
+      - key: GNANI_DAILY_LIMIT
+        value: "150"

@@ -1,5 +1,7 @@
 import mimetypes
+import os
 import re
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -12,8 +14,22 @@ from pydantic import BaseModel, ValidationError
 
 from ugharani import db, gnani, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
+from ugharani.seed import seed
 
-app = FastAPI(title="Ugharani")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Free hosting wipes the disk on every restart, so a demo server starts from sample buyers.
+    if os.getenv("DEMO_SEED") == "1":
+        conn = db.connect()
+        try:
+            seed(conn)
+        finally:
+            conn.close()
+    yield
+
+
+app = FastAPI(title="Ugharani", lifespan=lifespan)
 
 
 class Draft(BaseModel):

@@ -62,3 +62,24 @@ def test_rupees_use_indian_grouping(amount, text):
 def test_latin_buyer_name_gets_a_space_before_the_suffix():
     entry = parse("Rameshbhai ne 2,40,000 nu maal aapyu, 60 divas", today=date(2026, 10, 27))
     assert speech.readback(entry, date(2026, 10, 27)) == "Rameshbhai ને ₹2,40,000નો માલ, 60 દિવસની મુદત. બરાબર?"
+
+
+def test_bundled_clip_is_used_without_synthesising(calls, tmp_path, monkeypatch):
+    monkeypatch.setattr(speech, "BUNDLED_DIR", tmp_path / "bundled")
+    key = speech.clip_key("કેટલા દિવસની મુદત?")
+    (tmp_path / "bundled").mkdir()
+    (tmp_path / "bundled" / f"{key}.wav").write_bytes(b"RIFFbundled")
+
+    assert asyncio.run(speech.speak("કેટલા દિવસની મુદત?")) == key
+    assert calls == []
+    assert speech.clip_path(key).read_bytes() == b"RIFFbundled"
+
+
+def test_daily_limit_stops_paid_calls(monkeypatch):
+    monkeypatch.setenv("GNANI_API_KEY", "test")
+    monkeypatch.setenv("GNANI_DAILY_LIMIT", "2")
+    monkeypatch.setattr(gnani, "_calls", {})
+    gnani._spend()
+    gnani._spend()
+    with pytest.raises(gnani.GnaniError, match="daily limit of 2"):
+        gnani._spend()

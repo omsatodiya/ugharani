@@ -3,8 +3,10 @@
 import base64
 import io
 import json
+import os
 import unicodedata
 import wave
+from datetime import date
 
 import httpx
 
@@ -15,6 +17,24 @@ TTS_SAMPLE_RATE = 16000  # Prisma resamples to 16 kHz mono anyway
 
 class GnaniError(Exception):
     pass
+
+
+_calls: dict[date, int] = {}
+
+
+def _spend() -> None:
+    """Count a paid call; refuse once GNANI_DAILY_LIMIT calls were made today by this server.
+
+    A guard so a public demo link can't drain the challenge credits.
+    """
+    today = date.today()
+    if today not in _calls:
+        _calls.clear()  # new day, new budget
+        _calls[today] = 0
+    limit = int(os.getenv("GNANI_DAILY_LIMIT", "150"))
+    if _calls[today] >= limit:
+        raise GnaniError(f"daily limit of {limit} Gnani calls reached")
+    _calls[today] += 1
 
 
 def bias_words(names: list[str]) -> list[str]:
@@ -29,6 +49,7 @@ def bias_words(names: list[str]) -> list[str]:
 async def transcribe(audio: bytes, filename: str, bias: list[str] | None = None) -> dict:
     """POST /stt/v3 with ITN on. Returns the JSON payload (transcript, request_id, ...)."""
     s = get_settings()
+    _spend()
     form = {
         "language_code": s.language,
         "format": "transcribe",  # enables ITN: numbers, ₹, dates -> digits
@@ -66,6 +87,7 @@ def _wav(pcm: bytes) -> bytes:
 async def synthesize(text: str) -> bytes:
     """POST /api/v1/tts/sse and return the speech as WAV bytes (16 kHz mono PCM)."""
     s = get_settings()
+    _spend()
     body = {
         "text": text,
         "model": s.tts_model,

@@ -125,3 +125,10 @@ def test_pwa_is_served_without_shadowing_the_api(client):
     assert client.get("/app.js").headers["content-type"].startswith(("text/javascript", "application/javascript"))
     assert client.get("/manifest.webmanifest").headers["content-type"] == "application/manifest+json"
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_demo_server_seeds_an_empty_ledger(client, monkeypatch):
+    monkeypatch.setenv("DEMO_SEED", "1")
+    with TestClient(main.app) as seeded:  # context manager runs the startup hook
+        names = {b["buyer"] for b in seeded.get("/balances").json()}
+    assert names == {"રમેશભાઈ", "કાંતાબેન", "મહેશભાઈ"}

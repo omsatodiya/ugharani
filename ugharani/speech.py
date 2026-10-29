@@ -17,16 +17,21 @@ def clip_key(text: str) -> str:
     return hashlib.sha256(f"{tts_model()}/{tts_voice()}\n{text}".encode()).hexdigest()[:16]
 
 
+# Clips shipped with the app (fixed sentences), so a fresh server's empty cache doesn't re-pay for them.
+BUNDLED_DIR = Path(__file__).parent / "clips"
+
+
 def clip_path(key: str) -> Path:
-    return Path(audio_cache_dir()) / f"{key}.wav"
+    bundled = BUNDLED_DIR / f"{key}.wav"
+    return bundled if bundled.exists() else Path(audio_cache_dir()) / f"{key}.wav"
 
 
 async def speak(text: str) -> str:
-    """Synthesise `text` unless it is already cached; return its clip key."""
+    """Synthesise `text` unless it is already cached or bundled; return its clip key."""
     key = clip_key(text)
-    path = clip_path(key)
-    if not path.exists():
+    if not clip_path(key).exists():
         wav = await gnani.synthesize(text)
+        path = Path(audio_cache_dir()) / f"{key}.wav"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(wav)
     return key
