@@ -44,6 +44,18 @@ def open_credits(conn: sqlite3.Connection) -> list[OpenCredit]:
     return still_open
 
 
+def balances(conn: sqlite3.Connection) -> list[dict]:
+    """Outstanding amount per buyer, with the due date of their oldest *unpaid* credit."""
+    earliest = {}
+    for c in open_credits(conn):
+        earliest[c.buyer] = min(earliest.get(c.buyer, c.due_date), c.due_date)
+    return [
+        {"buyer": r["buyer"], "balance": r["balance"],
+         "earliest_due": earliest[r["buyer"]].isoformat() if r["buyer"] in earliest else None}
+        for r in db.balances(conn)
+    ]
+
+
 def status(due: date, today: date) -> str | None:
     if due < today:
         return "overdue"

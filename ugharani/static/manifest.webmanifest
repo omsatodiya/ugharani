@@ -1,0 +1,13 @@
+{
+  "name": "Ugharani · ઉઘરાણી",
+  "short_name": "ઉઘરાણી",
+  "description": "Gujarati voice credit ledger: speak a sale, get reminded of dues.",
+  "lang": "gu",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f3ec",
+  "theme_color": "#0f5132",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

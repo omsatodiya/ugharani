@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from ugharani import db, gnani, main, reminders
 from ugharani.extract import parse
+from ugharani.seed import seed
 
 OCT_1 = date(2026, 10, 1)
 TODAY = date(2026, 10, 31)
@@ -87,3 +88,19 @@ def test_summary_and_reminder_endpoints(conn):
     assert reminder["audio"].startswith("/audio/")
 
     assert client.get("/reminders/Nobodybhai").status_code == 404
+
+
+def test_seed_matches_its_summary_and_only_fills_an_empty_ledger(tmp_path):
+    conn = db.connect(str(tmp_path / "seed.db"))
+    assert seed(conn, today=TODAY) == 5
+    assert seed(conn, today=TODAY) == 0
+    items = reminders.due_items(conn, TODAY)
+    assert reminders.summary_text(items) == "આજે 1 ઉઘરાણી આવવાની છે, કુલ ₹1,20,000. આવતા 3 દિવસમાં 1 ઉઘરાણી, કુલ ₹75,000."
+
+
+def test_balances_show_the_oldest_unpaid_due_date(conn):
+    rows = {r["buyer"]: (r["balance"], r["earliest_due"]) for r in reminders.balances(conn)}
+    # Rameshbhai's Oct 21 bill is paid off, so his next due date is Oct 31
+    assert rows["Rameshbhai"] == (120000, "2026-10-31")
+    add(conn, "Kantaben e 75,000 jama karavya", on=TODAY)
+    assert {r["buyer"]: r["earliest_due"] for r in reminders.balances(conn)}["Kantaben"] is None

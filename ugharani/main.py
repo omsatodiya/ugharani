@@ -1,10 +1,13 @@
+import mimetypes
 import re
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from ugharani import db, gnani, reminders, speech
@@ -120,7 +123,7 @@ def list_entries() -> list[dict]:
 def balances() -> list[dict]:
     conn = db.connect()
     try:
-        return [dict(r) for r in db.balances(conn)]
+        return reminders.balances(conn)
     finally:
         conn.close()
 
@@ -159,3 +162,8 @@ def audio(key: str) -> FileResponse:
     if not re.fullmatch(r"[0-9a-f]{16}", key) or not path.exists():
         raise HTTPException(status_code=404, detail="no such clip")
     return FileResponse(path, media_type="audio/wav")
+
+
+# The PWA. Mounted last so the API routes above match first.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="pwa")

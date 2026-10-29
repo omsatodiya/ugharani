@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ugharani</title>
+  <meta name="description" content="Gujarati voice credit ledger: speak a sale, get reminded of dues.">
+  <meta name="theme-color" content="#0f5132">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>ઉઘરાણી</h1>
+      <p class="sub">Ugharani · બોલો, અમે યાદ રાખીશું</p>
+    </div>
+    <label class="demo-date" title="Demo date: jump ahead to show dues">
+      <span>તારીખ</span>
+      <input type="date" id="today">
+    </label>
+  </header>
+
+  <main>
+    <section class="card convo" id="convo" hidden aria-live="polite">
+      <div class="card-head">
+        <h2>નવી એન્ટ્રી <small>New entry</small></h2>
+        <button class="icon-btn" id="play-reply" aria-label="Play reply" hidden>▶</button>
+      </div>
+      <p class="heard" id="heard"></p>
+      <dl class="draft" id="draft"></dl>
+      <p class="say" id="reply-say"></p>
+      <p class="hint" id="answer-hint" hidden>જવાબ બોલવા માટે માઇક દબાવો · Tap the mic to answer</p>
+      <div class="actions" id="confirm" hidden>
+        <button class="btn primary" id="save">હા, સાચવો <small>Save</small></button>
+        <button class="btn" id="cancel">ના, રદ કરો <small>Discard</small></button>
+      </div>
+    </section>
+
+    <section class="card" id="summary" aria-live="polite">
+      <div class="card-head">
+        <h2>આજની ઉઘરાણી <small>Today's dues</small></h2>
+        <button class="icon-btn" id="play-summary" aria-label="Play summary" hidden>▶</button>
+      </div>
+      <p class="say" id="summary-say">લોડ થાય છે…</p>
+      <ul class="items" id="due-items"></ul>
+    </section>
+
+    <section class="card" id="ledger">
+      <div class="card-head">
+        <h2>ખાતાવહી <small>Balances</small></h2>
+      </div>
+      <ul class="items" id="balances"></ul>
+    </section>
+
+    <p class="foot">Gnani Prisma (speech to text) + Timbre (text to speech) · ડેમો ડેટા / demo data</p>
+  </main>
+
+  <dialog id="reminder" aria-labelledby="reminder-title">
+    <h2 id="reminder-title">યાદી <small>Reminder</small></h2>
+    <p class="say" id="reminder-say"></p>
+    <div class="actions">
+      <button class="btn" id="play-reminder">▶ સાંભળો <small>Listen</small></button>
+      <button class="btn primary" id="share-reminder">WhatsApp પર મોકલો <small>Send</small></button>
+    </div>
+    <button class="btn ghost" id="close-reminder">બંધ કરો <small>Close</small></button>
+  </dialog>
+
+  <div class="dock">
+    <button class="mic" id="mic" aria-label="Tap to speak">
+      <span class="mic-icon" aria-hidden="true"></span>
+      <span class="mic-label" id="mic-label">બોલો</span>
+    </button>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <audio id="player" preload="none"></audio>
+
+  <script src="/app.js"></script>
+</body>
+</html>

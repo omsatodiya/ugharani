@@ -4,12 +4,14 @@ Usage:
   uv run python scripts/ledger.py add "Rameshbhai ne be lakh chaalis hazaar nu maal aapyu, saath divas"
   uv run python scripts/ledger.py list
   uv run python scripts/ledger.py balances
+  uv run python scripts/ledger.py seed       # sample buyers for a demo (empty ledger only)
 """
 
 import argparse
 import sys
 
 from ugharani import db
+from ugharani.seed import seed
 from ugharani.extract import parse
 
 
@@ -22,6 +24,7 @@ def main() -> None:
     add.add_argument("--dry-run", action="store_true", help="parse only, don't save")
     sub.add_parser("list")
     sub.add_parser("balances")
+    sub.add_parser("seed", help="add sample buyers to an empty ledger")
     args = parser.parse_args()
 
     conn = db.connect()
@@ -39,6 +42,9 @@ def main() -> None:
         for r in db.list_entries(conn):
             print(f"#{r['id']} {r['entry_date']} {r['kind']:<7} {r['buyer']:<15} ₹{r['amount']:>10,} "
                   f"due {r['due_date'] or '-'}")
+    elif args.cmd == "seed":
+        added = seed(conn)
+        print(f"Added {added} sample entries" if added else "Ledger is not empty; nothing added")
     else:
         for r in db.balances(conn):
             print(f"{r['buyer']:<15} ₹{r['balance']:>10,}  earliest due {r['earliest_due'] or '-'}")
