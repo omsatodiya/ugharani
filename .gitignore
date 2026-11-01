@@ -10,6 +10,8 @@ out/
 
 # ledger database
 *.db
+*.db-wal
+*.db-shm
 
 # python
 .venv/
