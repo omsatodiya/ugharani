@@ -132,3 +132,42 @@ def test_demo_server_seeds_an_empty_ledger(client, monkeypatch):
     with TestClient(main.app) as seeded:  # context manager runs the startup hook
         names = {b["buyer"] for b in seeded.get("/balances").json()}
     assert names == {"રમેશભાઈ", "કાંતાબેન", "મહેશભાઈ"}
+
+
+def test_a_later_recording_fixes_a_misheard_field(client, monkeypatch):
+    monkeypatch.setattr(gnani, "transcribe", fake_stt("દિનેશભાઈને ₹50,000નો માલ, 3 દિવસ"))
+    draft = post_audio(client).json()["draft"]
+    monkeypatch.setattr(gnani, "transcribe", fake_stt("ના, 30 દિવસ"))
+    body = post_audio(client, draft=draft).json()
+    assert (body["draft"]["buyer"], body["draft"]["amount"], body["missing"]) == ("દિનેશભાઈ", 50000, [])
+    assert "30 દિવસની મુદત" in body["say"]
+
+
+def test_gnani_gateway_timeout_is_retried_once(client, monkeypatch):
+    import httpx
+
+    replies = [httpx.Response(504, text="<!DOCTYPE html><html>timeout</html>"),
+               httpx.Response(200, json={"success": True, "transcript": "રમેશભાઈ ને ₹5,000 નો માલ, 10 દિવસ"})]
+    sent = []
+
+    async def post(self, url, **kwargs):
+        sent.append(url)
+        return replies.pop(0)
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setenv("GNANI_API_KEY", "test")
+
+    body = post_audio(client).json()
+    assert len(sent) == 2 and body["draft"]["amount"] == 5000
+
+
+def test_gnani_busy_twice_says_speak_again(client, monkeypatch):
+    import httpx
+
+    async def post(self, url, **kwargs):
+        return httpx.Response(504, text="<!DOCTYPE html><html>timeout</html>")
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setenv("GNANI_API_KEY", "test")
+
+    resp = post_audio(client)
+    assert resp.status_code == 503
+    assert "ફરી બોલો" in resp.json()["detail"] and "DOCTYPE" not in resp.json()["detail"]

@@ -19,6 +19,20 @@ class GnaniError(Exception):
     pass
 
 
+class GnaniBusy(GnaniError):
+    """Gnani's gateway timed out or is overloaded (502/503/504): worth trying again later."""
+
+
+BUSY_STATUSES = {502, 503, 504}
+STT_ATTEMPTS = 2  # one retry: a 504 from Gnani's gateway usually clears on the next call
+
+
+def _short(resp: httpx.Response) -> str:
+    """The error body, but not a gateway's HTML error page."""
+    text = resp.text.strip()
+    return "gateway error page" if text.startswith("<") else text[:200]
+
+
 _calls: dict[date, int] = {}
 
 
@@ -49,7 +63,6 @@ def bias_words(names: list[str]) -> list[str]:
 async def transcribe(audio: bytes, filename: str, bias: list[str] | None = None) -> dict:
     """POST /stt/v3 with ITN on. Returns the JSON payload (transcript, request_id, ...)."""
     s = get_settings()
-    _spend()
     form = {
         "language_code": s.language,
         "format": "transcribe",  # enables ITN: numbers, ₹, dates -> digits
@@ -58,17 +71,28 @@ async def transcribe(audio: bytes, filename: str, bias: list[str] | None = None)
         form["bias_list"] = json.dumps(bias, ensure_ascii=False)
         form["bias_score"] = "1.0"  # docs: start at 1.0
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{s.gnani_base_url}/stt/v3",
-            headers=s.auth_headers,
-            data=form,
-            files={"audio_file": (filename, audio)},
-        )
+    for attempt in range(1, STT_ATTEMPTS + 1):
+        _spend()
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{s.gnani_base_url}/stt/v3",
+                    headers=s.auth_headers,
+                    data=form,
+                    files={"audio_file": (filename, audio)},
+                )
+        except httpx.TransportError as e:  # timeouts and dropped connections
+            busy = GnaniBusy(f"no response from Prisma ({type(e).__name__})")
+        else:
+            if resp.status_code not in BUSY_STATUSES:
+                break
+            busy = GnaniBusy(f"HTTP {resp.status_code}: {_short(resp)}")
+        if attempt == STT_ATTEMPTS:
+            raise busy
     try:
         payload = resp.json()
     except ValueError:
-        raise GnaniError(f"HTTP {resp.status_code}: {resp.text[:200]}") from None
+        raise GnaniError(f"HTTP {resp.status_code}: {_short(resp)}") from None
     if resp.status_code != 200 or not payload.get("success"):
         raise GnaniError(f"HTTP {resp.status_code}: {payload}")
     return payload

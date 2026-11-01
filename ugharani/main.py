@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 import os
 import re
@@ -15,6 +16,8 @@ from pydantic import BaseModel, ValidationError
 from ugharani import db, gnani, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
+
+log = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -56,7 +59,8 @@ async def audio_url(text: str) -> str | None:
     """Speak `text` (cached), or None if Timbre fails: the client can still show the text."""
     try:
         return f"/audio/{await speech.speak(text)}.wav"
-    except gnani.GnaniError:
+    except gnani.GnaniError as e:
+        log.warning("Timbre TTS failed: %s", e)
         return None
 
 
@@ -83,7 +87,13 @@ async def voice_entry(audio: UploadFile, draft: str | None = Form(None)) -> dict
         bias = gnani.bias_words(db.known_buyers(conn))
         try:
             stt = await gnani.transcribe(await audio.read(), audio.filename or "audio.wav", bias)
+        except gnani.GnaniBusy as e:
+            log.warning("Prisma STT busy after retry: %s", e)
+            raise HTTPException(  # the client keeps its draft, so only this answer is said again
+                status_code=503, detail="અવાજ સર્વર વ્યસ્ત છે, ફરી બોલો · Speech server busy, please speak again"
+            )
         except gnani.GnaniError as e:
+            log.warning("Prisma STT failed: %s", e)
             raise HTTPException(status_code=502, detail=f"Prisma STT failed: {e}")
 
         transcript = stt["transcript"]
