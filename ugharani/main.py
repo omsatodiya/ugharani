@@ -11,9 +11,9 @@ from typing import Literal
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
-from ugharani import db, gnani, reminders, speech
+from ugharani import db, followup, gnani, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
 
@@ -179,6 +179,90 @@ async def buyer_reminder(buyer: str, today: date | None = None) -> dict:
     if reminder is None:
         raise HTTPException(status_code=404, detail=f"nothing due from {buyer}")
     return {**reminder, "audio": await audio_url(reminder["say"])}
+
+
+# ---------- the follow-up desk: the owner's dashboard ----------
+
+@app.get("/settings")
+def get_settings() -> dict:
+    conn = db.connect()
+    try:
+        return followup.get_settings(conn)
+    finally:
+        conn.close()
+
+
+@app.put("/settings")
+def put_settings(changes: dict) -> dict:
+    """Change some of the owner's follow-up rules; send only the keys to change."""
+    conn = db.connect()
+    try:
+        return followup.update_settings(conn, changes)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        conn.close()
+
+
+class Contact(BaseModel):
+    firm: str | None = Field(None, max_length=80)
+    city: str | None = Field(None, max_length=40)
+    phone: str | None = Field(None, max_length=20)
+    deals_with: str | None = Field(None, max_length=60)
+    auto_call: bool | None = None
+
+
+@app.get("/customers")
+def list_customers() -> list[dict]:
+    conn = db.connect()
+    try:
+        return followup.customers(conn)
+    finally:
+        conn.close()
+
+
+@app.put("/customers/{name}")
+def put_customer(name: str, contact: Contact) -> dict:
+    conn = db.connect()
+    try:
+        name = db.resolve_buyer(conn, name)
+        followup.upsert_customer(conn, name, contact.phone, contact.deals_with, contact.auto_call,
+                                 contact.firm, contact.city)
+        return next(c for c in followup.customers(conn) if c["name"] == name)
+    finally:
+        conn.close()
+
+
+@app.get("/calls")
+def list_calls() -> list[dict]:
+    """The call log, newest first: what the agent heard and what it noted."""
+    conn = db.connect()
+    try:
+        return followup.list_calls(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/calls/queue")
+def call_queue(today: date | None = None) -> list[dict]:
+    """Who the agent will call today under the owner's rules. `today` lets a demo jump ahead."""
+    conn = db.connect()
+    try:
+        return followup.to_call(conn, today or date.today())
+    finally:
+        conn.close()
+
+
+@app.get("/calls/{call_id}")
+def get_call(call_id: int) -> dict:
+    conn = db.connect()
+    try:
+        call = followup.get_call(conn, call_id)
+    finally:
+        conn.close()
+    if call is None:
+        raise HTTPException(status_code=404, detail="no such call")
+    return call
 
 
 @app.get("/audio/{key}.wav")

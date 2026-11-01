@@ -171,3 +171,30 @@ def test_gnani_busy_twice_says_speak_again(client, monkeypatch):
     resp = post_audio(client)
     assert resp.status_code == 503
     assert "ફરી બોલો" in resp.json()["detail"] and "DOCTYPE" not in resp.json()["detail"]
+
+
+def test_dashboard_settings_customers_and_queue(client):
+    assert client.get("/settings").json()["business_name"] == "Genius Polyplast"
+    assert client.put("/settings", json={"repeat_every_days": 2}).json()["repeat_every_days"] == 2
+    assert client.put("/settings", json={"tone": "angry"}).status_code == 422
+
+    client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
+                                  "due_date": date.today().isoformat()})
+    c = client.put("/customers/રામેશભાઈ", json={"phone": "9800000001", "deals_with": "મનીષભાઈ", "firm": "શ્રીજી હાર્ડવેર"}).json()
+    assert (c["name"], c["phone"], c["firm"], c["balance"]) == ("રમેશભાઈ", "9800000001", "શ્રીજી હાર્ડવેર", 100000)  # matched spelling
+
+    queue = client.get("/calls/queue").json()
+    assert [(q["customer"], q["reason"]) for q in queue] == [("રમેશભાઈ", "due_today")]
+    assert client.get("/calls").json() == []
+    assert client.get("/calls/99").status_code == 404
+
+
+def test_demo_seed_includes_contacts(tmp_path):
+    from ugharani import db, followup
+    from ugharani.seed import seed
+    conn = db.connect(str(tmp_path / "seed.db"))
+    seed(conn)
+    by_name = {c["name"]: c for c in followup.customers(conn)}
+    assert (by_name["રમેશભાઈ"]["phone"], by_name["રમેશભાઈ"]["firm"], by_name["રમેશભાઈ"]["city"]) ==         ("9800000001", "શ્રીજી હાર્ડવેર", "જેતપુર")
+    assert followup.get_settings(conn)["business_place"] == "ગોંડલ, રાજકોટ"
+    assert [q["customer"] for q in followup.to_call(conn, date.today())] == ["રમેશભાઈ"]

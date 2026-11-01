@@ -17,14 +17,48 @@ CREATE TABLE IF NOT EXISTS entries (
     due_date   TEXT,              -- credits only
     transcript TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-)
+);
+
+-- The owner's follow-up rules, one row per setting (see followup.DEFAULTS).
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Contact details for buyers in the ledger; matched to entries.buyer by name.
+CREATE TABLE IF NOT EXISTS customers (
+    name       TEXT PRIMARY KEY,       -- the person, as the trader says it ('રમેશભાઈ')
+    firm       TEXT,                   -- their shop ('શ્રીજી હાર્ડવેર')
+    city       TEXT,
+    phone      TEXT,
+    deals_with TEXT,                       -- who at the business they deal with
+    auto_call  INTEGER NOT NULL DEFAULT 1  -- 0: the owner handles this one personally
+);
+
+-- Every follow-up call the agent placed, and what came of it.
+CREATE TABLE IF NOT EXISTS calls (
+    id              INTEGER PRIMARY KEY,
+    customer        TEXT NOT NULL,
+    trigger         TEXT NOT NULL CHECK (trigger IN ('auto', 'manual')),
+    status          TEXT NOT NULL DEFAULT 'ringing'
+                    CHECK (status IN ('ringing', 'in_progress', 'completed', 'missed', 'declined', 'failed')),
+    amount_due      INTEGER NOT NULL,  -- what was pending when the call was placed
+    outcome         TEXT CHECK (outcome IN ('promised', 'paid', 'dispute', 'callback', 'handover', 'refused', 'unclear')),
+    promised_amount INTEGER,
+    promised_date   TEXT,
+    summary         TEXT,
+    transcript      TEXT,              -- JSON list of {"who": "agent"|"customer", "text": ...}
+    recording       TEXT,              -- file name in the recordings dir
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at        TEXT
+);
 """
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path or ledger_db_path())
     conn.row_factory = sqlite3.Row
-    conn.execute(SCHEMA)
+    conn.executescript(SCHEMA)
     return conn
 
 
