@@ -198,3 +198,34 @@ def test_demo_seed_includes_contacts(tmp_path):
     assert (by_name["રમેશભાઈ"]["phone"], by_name["રમેશભાઈ"]["firm"], by_name["રમેશભાઈ"]["city"]) ==         ("9800000001", "શ્રીજી હાર્ડવેર", "જેતપુર")
     assert followup.get_settings(conn)["business_place"] == "ગોંડલ, રાજકોટ"
     assert [q["customer"] for q in followup.to_call(conn, date.today())] == ["રમેશભાઈ"]
+
+
+def test_call_rings_the_customers_phone_then_ends(client):
+    client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
+                                  "due_date": date.today().isoformat()})
+    assert client.get("/phone/incoming", params={"customer": "રમેશભાઈ"}).json()["call"] is None
+
+    call = client.post("/calls", json={"customer": "રામેશભાઈ"}).json()
+    assert (call["customer"], call["status"], call["amount_due"]) == ("રમેશભાઈ", "ringing", 100000)
+    assert client.post("/calls", json={"customer": "રમેશભાઈ"}).json()["id"] == call["id"]  # no double ring
+
+    phone = client.get("/phone/incoming", params={"customer": "રમેશભાઈ"}).json()
+    assert phone["call"]["id"] == call["id"] and phone["caller"]["name"] == "Genius Polyplast"
+
+    status = lambda s: client.post(f"/calls/{call['id']}/status", json={"status": s})
+    assert status("completed").status_code == 409  # can't end a call nobody answered
+    assert status("in_progress").json()["status"] == "in_progress"
+    assert client.get("/phone/incoming", params={"customer": "રમેશભાઈ"}).json()["call"] is None
+    ended = status("completed").json()
+    assert ended["status"] == "completed" and ended["ended_at"]
+
+
+def test_auto_run_rings_everyone_due_once(client):
+    client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
+                                  "due_date": date.today().isoformat()})
+    client.post("/entries", json={"kind": "credit", "buyer": "કાંતાબેન", "amount": 50000,
+                                  "due_date": (date.today() + timedelta(days=9)).isoformat()})
+    rung = client.post("/calls/run").json()
+    assert [(c["customer"], c["trigger"]) for c in rung] == [("રમેશભાઈ", "auto")]
+    assert client.post("/calls/run").json() == []  # already ringing
+    assert client.post("/calls", json={"customer": "કોઈ નહીં"}).status_code == 404

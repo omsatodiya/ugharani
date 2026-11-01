@@ -1,0 +1,85 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: #0b0f14; color: #f2f5f7; overflow: hidden;
+  font-family: "Noto Sans Gujarati", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+small { display: block; font-size: 0.7em; opacity: 0.7; font-weight: 400; }
+button { font: inherit; color: inherit; }
+
+.screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+  padding: calc(48px + env(safe-area-inset-top)) 24px calc(40px + env(safe-area-inset-bottom));
+}
+.screen[hidden] { display: none; }
+
+/* lock screen */
+#lock { background: radial-gradient(120% 80% at 50% 0%, #1d3b52 0%, #0b0f14 70%); justify-content: flex-start; }
+.clock { font-size: 84px; font-weight: 300; letter-spacing: 1px; margin-top: 48px; font-variant-numeric: tabular-nums; }
+.date { font-size: 18px; opacity: 0.85; }
+.owner { margin-top: 6px; font-size: 14px; opacity: 0.55; }
+.arm {
+  margin-top: auto; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
+  border-radius: 999px; padding: 14px 28px; font-size: 17px; cursor: pointer;
+}
+.ready { margin-top: auto; font-size: 14px; opacity: 0.6; }
+
+/* picker */
+#pick { background: #0b0f14; justify-content: flex-start; }
+#pick h1 { font-size: 22px; text-align: center; }
+#pick ul { list-style: none; padding: 0; width: 100%; max-width: 420px; }
+#pick a {
+  display: block; padding: 16px; margin: 8px 0; border-radius: 14px; background: #17202a;
+  color: inherit; text-decoration: none; font-size: 18px;
+}
+
+/* calls */
+.call-bg { background: linear-gradient(180deg, #1f4f45 0%, #10261f 55%, #0b0f14 100%); }
+.label { margin: 8px 0 28px; font-size: 16px; opacity: 0.8; text-align: center; }
+.avatar {
+  width: 112px; height: 112px; border-radius: 50%; background: #e9eef0; color: #1f4f45;
+  display: grid; place-items: center; font-size: 40px; font-weight: 700; letter-spacing: 1px;
+}
+.avatar.small { width: 84px; height: 84px; font-size: 30px; margin-top: 24px; }
+.caller { margin: 20px 0 4px; font-size: 30px; font-weight: 500; text-align: center; }
+.sub { margin: 0; font-size: 16px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+
+.answer-row { margin-top: auto; width: 100%; max-width: 360px; display: flex; justify-content: space-between; }
+.action { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 14px; opacity: 0.9; }
+.round {
+  width: 72px; height: 72px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.accept { background: #22c55e; animation: nudge 1.4s ease-in-out infinite; }
+.decline { background: #ef4444; }
+.end { margin-top: auto; }
+@keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) { .accept { animation: none; } }
+
+/* a phone handset drawn in CSS, so no icon font is needed */
+.handset {
+  width: 30px; height: 12px; border-radius: 12px 12px 4px 4px; background: #fff; position: relative;
+  transform: rotate(-20deg);
+}
+.handset::before, .handset::after {
+  content: ""; position: absolute; bottom: -6px; width: 9px; height: 8px; background: #fff; border-radius: 2px;
+}
+.handset::before { left: 0; }
+.handset::after { right: 0; }
+.handset.down { transform: rotate(135deg); }
+
+.grid {
+  margin-top: 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px 30px;
+  width: 100%; max-width: 330px;
+}
+.key {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: 0;
+  font-size: 13px; opacity: 0.9; cursor: pointer;
+}
+.key .ico {
+  width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.12);
+  display: grid; place-items: center; font-size: 22px;
+}
+.key:disabled { opacity: 0.45; cursor: default; }
+.key.on .ico { background: #f2f5f7; color: #10261f; }

@@ -253,6 +253,87 @@ def call_queue(today: date | None = None) -> list[dict]:
         conn.close()
 
 
+class CallRequest(BaseModel):
+    customer: str
+
+
+def _customer(conn, name: str) -> dict:
+    name = db.resolve_buyer(conn, name)
+    found = next((c for c in followup.customers(conn) if c["name"] == name), None)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"no customer {name}")
+    return found
+
+
+@app.post("/calls")
+def place_call(req: CallRequest) -> dict:
+    """The owner taps 'call now': the customer's phone page starts ringing."""
+    conn = db.connect()
+    try:
+        c = _customer(conn, req.customer)
+        if c["balance"] <= 0:
+            raise HTTPException(status_code=409, detail=f"{c['name']} has nothing pending")
+        last = c["last_call"]
+        if last and last["status"] in ("ringing", "in_progress"):
+            return last  # already calling them
+        return followup.get_call(conn, followup.start_call(conn, c["name"], c["balance"], "manual"))
+    finally:
+        conn.close()
+
+
+@app.post("/calls/run")
+def run_queue(today: date | None = None) -> list[dict]:
+    """The auto-ugharani tick: ring everyone due a call today under the owner's rules."""
+    conn = db.connect()
+    try:
+        return [followup.get_call(conn, followup.start_call(conn, q["customer"], q["amount"], "auto"))
+                for q in followup.to_call(conn, today or date.today())]
+    finally:
+        conn.close()
+
+
+@app.get("/phone/incoming")
+def incoming(customer: str) -> dict:
+    """What the customer's phone shows: a ringing call (with caller details), or nothing."""
+    conn = db.connect()
+    try:
+        c = _customer(conn, customer)
+        rules = followup.get_settings(conn)
+    finally:
+        conn.close()
+    call = c["last_call"]
+    ringing = call if call and call["status"] == "ringing" else None
+    return {
+        "customer": c["name"],
+        "caller": {"name": rules["business_name"], "spoken": rules["business_name_spoken"],
+                   "place": rules["business_place"]},
+        "call": ringing and {"id": ringing["id"], "created_at": ringing["created_at"]},
+    }
+
+
+class CallStatus(BaseModel):
+    status: Literal["in_progress", "declined", "missed", "completed", "failed"]
+
+
+# A ringing call may be answered, declined or missed; an answered one only ends.
+NEXT_STATUS = {"ringing": {"in_progress", "declined", "missed", "failed"}, "in_progress": {"completed", "failed"}}
+
+
+@app.post("/calls/{call_id}/status")
+def call_status(call_id: int, change: CallStatus) -> dict:
+    conn = db.connect()
+    try:
+        call = followup.get_call(conn, call_id)
+        if call is None:
+            raise HTTPException(status_code=404, detail="no such call")
+        if change.status not in NEXT_STATUS.get(call["status"], set()):
+            raise HTTPException(status_code=409, detail=f"call is {call['status']}, can't become {change.status}")
+        followup.set_status(conn, call_id, change.status)
+        return followup.get_call(conn, call_id)
+    finally:
+        conn.close()
+
+
 @app.get("/calls/{call_id}")
 def get_call(call_id: int) -> dict:
     conn = db.connect()

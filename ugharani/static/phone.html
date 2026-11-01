@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f14">
+  <title>Phone</title>
+  <link rel="stylesheet" href="/phone.css">
+</head>
+<body>
+  <!-- The customer's phone in the demo: it rings when Genius Polyplast's agent calls. -->
+
+  <section id="pick" class="screen" hidden>
+    <h1>કોનો ફોન? <small>Whose phone is this?</small></h1>
+    <ul id="pick-list"></ul>
+  </section>
+
+  <section id="lock" class="screen">
+    <div class="clock" id="clock">--:--</div>
+    <div class="date" id="date"></div>
+    <div class="owner" id="owner"></div>
+    <button id="arm" class="arm">કૉલ મેળવવા ટૅપ કરો<small>Tap once to receive calls</small></button>
+    <p class="ready" id="ready" hidden>ફોન તૈયાર છે · Waiting for calls</p>
+  </section>
+
+  <section id="ringing" class="screen call-bg" hidden>
+    <p class="label">ઇનકમિંગ કૉલ <small>Incoming call</small></p>
+    <div class="avatar" id="ring-avatar">GP</div>
+    <h2 class="caller" id="ring-name"></h2>
+    <p class="sub" id="ring-place"></p>
+    <div class="answer-row">
+      <div class="action">
+        <button class="round decline" id="decline" aria-label="Decline"><span class="handset down"></span></button>
+        <span>નકારો</span>
+      </div>
+      <div class="action">
+        <button class="round accept" id="accept" aria-label="Answer"><span class="handset"></span></button>
+        <span>ઉપાડો</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="incall" class="screen call-bg" hidden>
+    <div class="avatar small" id="call-avatar">GP</div>
+    <h2 class="caller" id="call-name"></h2>
+    <p class="sub" id="call-timer">કનેક્ટ થઈ રહ્યું છે…</p>
+    <div class="grid">
+      <button class="key" id="mute"><span class="ico">🎙</span>મ્યૂટ</button>
+      <button class="key" disabled><span class="ico">⌨</span>કીપેડ</button>
+      <button class="key" id="speaker"><span class="ico">🔊</span>સ્પીકર</button>
+      <button class="key" disabled><span class="ico">＋</span>કૉલ ઉમેરો</button>
+      <button class="key" disabled><span class="ico">⏸</span>હોલ્ડ</button>
+      <button class="key" disabled><span class="ico">⏺</span>રેકોર્ડ</button>
+    </div>
+    <button class="round decline end" id="hangup" aria-label="End call"><span class="handset down"></span></button>
+  </section>
+
+  <section id="ended" class="screen call-bg" hidden>
+    <div class="avatar small">GP</div>
+    <h2 class="caller" id="end-name"></h2>
+    <p class="sub" id="end-text">કૉલ પૂરો થયો</p>
+  </section>
+
+  <script src="/phone.js"></script>
+</body>
+</html>

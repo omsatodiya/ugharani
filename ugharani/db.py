@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS calls (
 def connect(path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path or ledger_db_path())
     conn.row_factory = sqlite3.Row
+    # WAL + NORMAL: commits don't wait on a full disk sync (still safe against app crashes).
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     conn.executescript(SCHEMA)
     return conn
 
