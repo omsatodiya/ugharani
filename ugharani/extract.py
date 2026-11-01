@@ -22,25 +22,46 @@ NUMBER_WORDS = {
     **dict.fromkeys(["saat", "સાત"], 7),
     **dict.fromkeys(["aath", "આઠ"], 8),
     **dict.fromkeys(["nav", "nau", "નવ"], 9),
-    **dict.fromkeys(["das", "દસ"], 10),
+    **dict.fromkeys(["das", "દસ", "દશ"], 10),
+    **dict.fromkeys(["agiyar", "અગિયાર"], 11),
+    **dict.fromkeys(["bar", "baar", "બાર"], 12),
     **dict.fromkeys(["pandar", "pandara", "પંદર"], 15),
     **dict.fromkeys(["vees", "vis", "bees", "વીસ"], 20),
+    **dict.fromkeys(["ekvees", "એકવીસ"], 21),
     **dict.fromkeys(["pachis", "pachchis", "પચીસ", "પચ્ચીસ"], 25),
     **dict.fromkeys(["trees", "tees", "ત્રીસ"], 30),
+    **dict.fromkeys(["pantrees", "પાંત્રીસ"], 35),
     **dict.fromkeys(["chalis", "chaalis", "chaalees", "ચાળીસ", "ચાલીસ"], 40),
+    **dict.fromkeys(["pistalis", "પિસ્તાળીસ", "પિસ્તાલીસ"], 45),
     **dict.fromkeys(["pachas", "pachaas", "પચાસ"], 50),
-    **dict.fromkeys(["sath", "saath", "સાઠ"], 60),
+    **dict.fromkeys(["sath", "saath", "saith", "સાઠ", "સાઈઠ", "સાંઈઠ", "સાઇઠ"], 60),
     **dict.fromkeys(["sittar", "sitter", "સિત્તેર"], 70),
+    **dict.fromkeys(["panchoter", "પંચોતેર"], 75),
     **dict.fromkeys(["ensi", "assi", "એંસી"], 80),
-    **dict.fromkeys(["nevu", "nevun", "નેવું"], 90),
+    **dict.fromkeys(["nevu", "nevun", "નેવું", "નેવુ"], 90),
+    # English, as Prisma sometimes writes it in Gujarati script ('ફિફ્ટી'). Not 'થ્રી' and
+    # other single digits: Prisma writes 'થ્રી' for a misheard 'ત્રીસ', and asking again
+    # beats silently saving 3 days.
+    **dict.fromkeys(["one"], 1), **dict.fromkeys(["two"], 2), **dict.fromkeys(["three"], 3),
+    **dict.fromkeys(["four"], 4), **dict.fromkeys(["five"], 5),
+    **dict.fromkeys(["ten", "ટેન"], 10), **dict.fromkeys(["fifteen", "ફિફ્ટીન"], 15),
+    **dict.fromkeys(["twenty", "ટ્વેન્ટી"], 20), **dict.fromkeys(["thirty", "થર્ટી"], 30),
+    **dict.fromkeys(["forty", "ફોર્ટી"], 40), **dict.fromkeys(["fifty", "ફિફ્ટી"], 50),
+    **dict.fromkeys(["sixty", "સિક્સ્ટી"], 60), **dict.fromkeys(["ninety", "નાઈન્ટી", "નાઇન્ટી"], 90),
     **dict.fromkeys(["dodh", "dedh", "દોઢ"], 1.5),
     **dict.fromkeys(["adhi", "dhai", "અઢી"], 2.5),
 }
 MAGNITUDES = {
     **dict.fromkeys(["so", "sau", "સો"], 100),
-    **dict.fromkeys(["hazar", "hazaar", "hajar", "hajaar", "હજાર"], 1_000),
+    **dict.fromkeys(["hazar", "hazaar", "hajar", "hajaar", "thousand", "હજાર", "થાઉઝન્ડ"], 1_000),
     **dict.fromkeys(["lakh", "lac", "laakh", "લાખ"], 100_000),
     **dict.fromkeys(["crore", "karod", "કરોડ"], 10_000_000),
+}
+# 'સાડા ત્રણ લાખ' = 3.5 lakh, 'સવા' adds a quarter, 'પોણા' takes one off
+FRACTION_WORDS = {
+    **dict.fromkeys(["sada", "saada", "સાડા", "સાડાં"], 0.5),
+    **dict.fromkeys(["sava", "savaa", "સવા"], 0.25),
+    **dict.fromkeys(["pona", "pauna", "પોણા"], -0.25),
 }
 # Stems, so inflections like મહિને / મહિનામાં / divase still match.
 DURATION_STEMS = {
@@ -78,6 +99,23 @@ def _number(tok: str) -> float | None:
     return NUMBER_WORDS.get(tok)
 
 
+def _magnitude(tok: str) -> int | None:
+    """'હજાર', and inflected 'હજારનો' / 'લાખનું' / 'lakhnu'."""
+    return MAGNITUDES.get(tok) or MAGNITUDES.get(re.sub(r"(નો|ના|નું|ની|nu|no|na|ni)$", "", tok))
+
+
+def _split_itn(value: float, magnitude: int) -> float:
+    """Prisma's ITN sometimes half-converts 'બે લાખ ચાલીસ હજાર' to '2,00,040 હજાર'.
+
+    A number already at least as big as the word after it holds the smaller part
+    in its low digits: 2,00,040 હજાર -> 2,00,000 + 40 x 1,000.
+    """
+    if value < magnitude:
+        return value * magnitude
+    low = value % magnitude
+    return value - low + low * magnitude
+
+
 def _duration_unit(tok: str) -> int | None:
     return next((days for stem, days in DURATION_STEMS.items() if tok.startswith(stem)), None)
 
@@ -91,24 +129,38 @@ def _number_groups(tokens: list[str]) -> list[tuple[float, int, int]]:
     """
     groups, i = [], 0
     while i < len(tokens):
-        val = _number(tokens[i])
-        if val is None:
-            i += 1
-            continue
-        start, is_digit = i, tokens[i][0].isdigit()
-        total, chunk, used_magnitude = 0.0, val, False
+        fraction = FRACTION_WORDS.get(tokens[i]) if i + 1 < len(tokens) else None
+        if fraction is not None and _magnitude(tokens[i + 1]):
+            val = 1 + fraction  # 'સવા લાખ' = 1.25 lakh; tokens[i] stands in for the number
+        else:
+            val = _number(tokens[i + 1] if fraction is not None else tokens[i])
+            if val is None:
+                i += 1
+                continue
+        start = i
+        if fraction is not None and not _magnitude(tokens[i + 1]):  # 'સાડા ત્રણ' = 3.5
+            val, i = val + fraction, i + 1
+        is_digit = tokens[i][0].isdigit()
+        total, chunk, used_magnitude, last_mag = 0.0, val, False, 0
         i += 1
         while i < len(tokens):
-            if tokens[i] in MAGNITUDES:
-                total += chunk * MAGNITUDES[tokens[i]]
-                chunk, used_magnitude = 0.0, True
+            if mag := _magnitude(tokens[i]):
+                total += _split_itn(chunk, mag) if tokens[i - 1][0].isdigit() else chunk * mag
+                chunk, used_magnitude, last_mag = 0.0, True, mag
                 i += 1
             elif (
                 used_magnitude and chunk == 0 and _number(tokens[i]) is not None
-                and i + 1 < len(tokens) and tokens[i + 1] in MAGNITUDES
+                and i + 1 < len(tokens) and _magnitude(tokens[i + 1])
             ):
                 chunk = _number(tokens[i])  # 'be lakh chaalis hazaar'
                 i += 1
+            elif (
+                used_magnitude and chunk == 0 and tokens[i][0].isdigit() and 100 <= _number(tokens[i]) < last_mag
+                and not (i + 1 < len(tokens) and _duration_unit(tokens[i + 1]))  # not '2 lakh, 60 divas'
+            ):
+                chunk = _number(tokens[i])  # ITN: '5 લાખ 50,000'
+                i += 1
+                break
             else:
                 break
         total += chunk
@@ -124,7 +176,9 @@ def _display(name: str) -> str:
 
 def _find_buyer(tokens: list[str]) -> str | None:
     for i, tok in enumerate(tokens):
-        name = tok if tok.endswith(HONORIFICS) else _CASE_SUFFIX.sub("", tok)
+        # 'કાંતાબેને' is કાંતાબેન + the ે sign, not + ને, so try dropping just the sign too.
+        stripped = _CASE_SUFFIX.sub("", tok)
+        name = next((n for n in (tok, stripped, tok.removesuffix("ે")) if n.endswith(HONORIFICS)), stripped)
         if name in HONORIFICS and i > 0 and _number(tokens[i - 1]) is None:
             return _display(f"{tokens[i - 1]} {name}")  # 'Patel sheth', 'Ramesh bhai'
         if any(name.endswith(h) and len(name) > len(h) for h in HONORIFICS):
@@ -187,15 +241,15 @@ def missing_fields(kind: str, buyer: str | None, amount: int | None, due_date: d
 
 
 def merge(draft: ParsedEntry, answer: ParsedEntry) -> ParsedEntry:
-    """Fill a draft's missing fields from a follow-up answer ('60 divas', 'Rameshbhai').
+    """Apply a follow-up recording to a draft: an answer ('60 divas') or a fix ('ના, સાઠ દિવસ').
 
-    Fields the draft already has are kept, and so is its kind: a bare answer
-    always parses as a credit.
+    Whatever the new recording says wins, so a misheard field is fixed by saying
+    just that field again. The draft's kind is kept: a bare answer always parses as a credit.
     """
-    buyer = draft.buyer or answer.buyer
-    amount = draft.amount if draft.amount is not None else answer.amount
+    buyer = answer.buyer or draft.buyer
+    amount = answer.amount if answer.amount is not None else draft.amount
     due_days, due_date = draft.due_days, draft.due_date
-    if draft.kind == "credit" and due_date is None:
+    if draft.kind == "credit" and answer.due_date is not None:
         due_days, due_date = answer.due_days, answer.due_date
     return ParsedEntry(
         kind=draft.kind,

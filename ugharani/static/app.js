@@ -29,6 +29,13 @@ function formatDate(iso) {
   return new Date(iso + "T00:00:00").toLocaleDateString("gu-IN", { day: "numeric", month: "short" });
 }
 
+// Days from the real today, matching the spoken read-back ("30 દિવસની મુદત").
+function daysFromToday(iso) {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((Date.parse(iso + "T00:00:00Z") - today) / 86400000);
+}
+
 let toastTimer;
 function toast(message) {
   const t = $("toast");
@@ -146,7 +153,7 @@ function setMic(state) {
   mic.classList.toggle("recording", state === "recording");
   mic.classList.toggle("busy", state === "busy");
   mic.disabled = state === "busy";
-  $("mic-label").textContent = { idle: draft?.missing ? "જવાબ" : "બોલો", recording: "રોકો", busy: "…" }[state];
+  $("mic-label").textContent = { idle: draft?.missing ? "જવાબ" : draft ? "સુધારો" : "બોલો", recording: "રોકો", busy: "…" }[state];
   mic.setAttribute("aria-label", { idle: "Tap to speak", recording: "Tap to stop", busy: "Working" }[state]);
 }
 
@@ -185,7 +192,8 @@ async function stopRecording() {
 async function sendRecording(wav) {
   const form = new FormData();
   form.append("audio", wav, "entry.wav");
-  if (draft?.missing) form.append("draft", JSON.stringify(draft.fields));
+  // A follow-up recording either answers the question or fixes a misheard field ("ના, સાઠ દિવસ").
+  if (draft) form.append("draft", JSON.stringify(draft.fields));
   const body = await api("/entries/voice", { method: "POST", body: form });
   draft = { fields: body.draft, missing: body.missing.length ? body.missing : null };
   showConvo(body);
@@ -199,7 +207,7 @@ function showConvo(body) {
   const values = {
     buyer: d.buyer,
     amount: d.amount != null ? rupees.format(d.amount) : null,
-    due_date: d.due_date ? formatDate(d.due_date) : null,
+    due_date: d.due_date ? `${daysFromToday(d.due_date)} દિવસ · ${formatDate(d.due_date)}` : null,
   };
   const rows = [el("dt", {}, "પ્રકાર"), el("dd", {}, d.kind === "payment" ? "જમા (payment)" : "ઉધાર માલ (credit)")];
   for (const [key, label] of Object.entries(FIELDS)) {
@@ -209,7 +217,10 @@ function showConvo(body) {
   $("draft").replaceChildren(...rows);
   $("reply-say").textContent = body.say;
   bindPlay($("play-reply"), body.audio);
-  $("answer-hint").hidden = !body.missing.length;
+  $("answer-hint").textContent = body.missing.length
+    ? "જવાબ બોલવા માટે માઇક દબાવો · Tap the mic to answer"
+    : "કંઈ ખોટું હોય તો માઇક દબાવી ફક્ત તે જ બોલો, જેમ કે “ના, સાઠ દિવસ” · Wrong? Tap the mic and say just the fix";
+  $("answer-hint").hidden = false;
   $("confirm").hidden = !!body.missing.length;
   $("convo").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }

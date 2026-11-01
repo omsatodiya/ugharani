@@ -54,12 +54,37 @@ def test_follow_up_answer_fills_only_the_missing_field():
     filled = merge(draft, parse("60 દિવસ", today=TODAY))
     assert (filled.buyer, filled.amount, filled.due_days, filled.missing) == ("રમેશભાઈ", 240000, 60, [])
 
-    # an answer can't overwrite what the draft already has
-    again = merge(filled, parse("Kantaben ne 5,000, 10 divas", today=TODAY))
-    assert (again.buyer, again.amount, again.due_days) == ("રમેશભાઈ", 240000, 60)
+    # a later recording is a fix: what it says wins, the rest stays
+    fixed = merge(filled, parse("ના, સાઈઠ નહીં, પિસ્તાળીસ દિવસ", today=TODAY))
+    assert (fixed.buyer, fixed.amount, fixed.due_days) == ("રમેશભાઈ", 240000, 45)
+    fixed = merge(fixed, parse("ના, રકમ સાડા ત્રણ લાખ", today=TODAY))
+    assert (fixed.buyer, fixed.amount, fixed.due_days) == ("રમેશભાઈ", 350000, 45)
 
 
 def test_payment_draft_stays_a_payment_and_needs_no_due_date():
     draft = parse("રમેશભાઈએ પૈસા જમા કરાવ્યા", today=TODAY)
     filled = merge(draft, parse("₹50,000", today=TODAY))
     assert (filled.kind, filled.amount, filled.due_date, filled.missing) == ("payment", 50000, None, [])
+
+
+def test_ben_with_agent_sign_keeps_the_name():
+    e = parse("કાંતાબેને ₹25,000 જમા કરાવ્યા", today=TODAY)
+    assert (e.kind, e.buyer, e.amount, e.missing) == ("payment", "કાંતાબેન", 25000, [])
+
+
+# Real Prisma transcripts from testing, 2026-11-01
+@pytest.mark.parametrize("text, amount, days", [
+    ("સુરેશભાઈને 2,00,040 હજારનો માલ આપ્યો 60 દિવસની મુદત", 240000, 60),  # half-converted by ITN
+    ("દિનેશભાઈને 50 હજારનો માલ", 50000, None),
+    ("5 લાખ 50,000 નો માલ", 550000, None),
+    ("સવા લાખ, પંદર દિવસ", 125000, 15),
+    ("પોણા બે લાખ", 175000, None),
+    ("fifty thousand, thirty days", 50000, 30),
+])
+def test_amounts_and_days_as_prisma_writes_them(text, amount, days):
+    e = parse(text, today=TODAY)
+    assert (e.amount, e.due_days) == (amount, days)
+
+
+def test_misheard_three_is_asked_again_not_saved_as_3_days():
+    assert parse("થ્રી દિવસ", today=TODAY).due_days is None
