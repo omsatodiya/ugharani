@@ -51,7 +51,24 @@ async function arm() {
   }
   $("arm").hidden = true;
   $("ready").hidden = false;
+  $("call-now").hidden = false;
   poll();
+}
+
+async function callNow() {
+  // Ask the server to place the call; the phone then rings through the normal polling.
+  const button = $("call-now");
+  button.disabled = true;
+  $("call-now-msg").hidden = false;
+  $("call-now-msg").textContent = "કૉલ લાગી રહ્યો છે… · Placing the call…";
+  try {
+    await post("/calls", { customer });
+    $("call-now-msg").hidden = true;
+  } catch (e) {
+    $("call-now-msg").textContent = e.message; // e.g. nothing pending for this customer
+  } finally {
+    setTimeout(() => { button.disabled = false; }, 5000);
+  }
 }
 
 // ---------- ringtone: a soft marimba phrase, made in the browser (no audio file) ----------
@@ -272,6 +289,7 @@ if (!customer) {
   tickClock();
   setInterval(tickClock, 10000);
   $("arm").addEventListener("click", arm);
+  $("call-now").addEventListener("click", callNow);
   $("accept").addEventListener("click", answer);
   $("decline").addEventListener("click", () => endRinging("declined"));
   $("hangup").addEventListener("click", () => hangup());

@@ -24,6 +24,12 @@ button { font: inherit; color: inherit; }
   border-radius: 999px; padding: 14px 28px; font-size: 17px; cursor: pointer;
 }
 .ready { margin-top: auto; font-size: 14px; opacity: 0.6; }
+.call-now {
+  margin-top: 16px; border: 1px dashed rgba(255,255,255,0.35); background: none;
+  border-radius: 999px; padding: 10px 22px; font-size: 15px; cursor: pointer; opacity: 0.8;
+}
+.call-now:disabled { opacity: 0.4; cursor: default; }
+.call-now-msg { margin: 8px 0 0; font-size: 13px; opacity: 0.7; text-align: center; }
 
 /* picker */
 #pick { background: #0b0f14; justify-content: flex-start; }
