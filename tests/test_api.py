@@ -229,3 +229,9 @@ def test_auto_run_rings_everyone_due_once(client):
     assert [(c["customer"], c["trigger"]) for c in rung] == [("રમેશભાઈ", "auto")]
     assert client.post("/calls/run").json() == []  # already ringing
     assert client.post("/calls", json={"customer": "કોઈ નહીં"}).status_code == 404
+
+
+def test_pages_are_revalidated_but_clips_are_not(client):
+    assert client.get("/phone.html").headers["cache-control"] == "no-cache"
+    assert client.get("/phone.js").headers["cache-control"] == "no-cache"
+    assert "no-cache" not in client.get("/audio/0000000000000000.wav").headers.get("cache-control", "")

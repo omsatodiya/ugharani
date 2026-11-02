@@ -36,6 +36,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Ugharani", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def revalidate_pages(request, call_next):
+    """Pages and scripts: always check for a newer version (a 304 when unchanged), so a deploy shows
+    up at once instead of whenever the browser's heuristic cache expires. Clips never change."""
+    resp = await call_next(request)
+    if not request.url.path.startswith("/audio/"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
+    return resp
+
+
 class Draft(BaseModel):
     """An entry the trader has not confirmed yet. The client holds it between requests."""
 
