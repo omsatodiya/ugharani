@@ -127,9 +127,10 @@ def get_call(conn: sqlite3.Connection, call_id: int) -> dict | None:
     return _call(conn.execute("SELECT * FROM calls WHERE id = ?", (call_id,)).fetchone())
 
 
-def last_call(conn: sqlite3.Connection, customer: str) -> dict | None:
-    return _call(conn.execute("SELECT * FROM calls WHERE customer = ? ORDER BY id DESC LIMIT 1",
-                              (customer,)).fetchone())
+def last_call(conn: sqlite3.Connection, customer: str, before: int | None = None) -> dict | None:
+    """The customer's latest call, or the latest one before call id `before`."""
+    return _call(conn.execute("SELECT * FROM calls WHERE customer = ? AND id < ? ORDER BY id DESC LIMIT 1",
+                              (customer, before if before is not None else 2**62)).fetchone())
 
 
 def list_calls(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
@@ -140,6 +141,14 @@ def set_status(conn: sqlite3.Connection, call_id: int, status: str) -> None:
     ended = status in ("completed", "missed", "declined", "failed")
     conn.execute("UPDATE calls SET status = ?, ended_at = CASE WHEN ? THEN ? ELSE ended_at END WHERE id = ?",
                  (status, ended, datetime.now().isoformat(timespec="seconds"), call_id))
+    conn.commit()
+
+
+def end_live_call(conn: sqlite3.Connection, call_id: int, transcript: list[dict], ok: bool = True) -> None:
+    """The line dropped or someone hung up: keep what was said. Notes are added after (finish_call)."""
+    conn.execute("UPDATE calls SET status = ?, transcript = ?, ended_at = ? WHERE id = ? AND status = 'in_progress'",
+                 ("completed" if ok else "failed", json.dumps(transcript, ensure_ascii=False),
+                  datetime.now().isoformat(timespec="seconds"), call_id))
     conn.commit()
 
 

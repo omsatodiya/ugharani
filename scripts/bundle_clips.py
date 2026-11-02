@@ -15,7 +15,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from ugharani import db, reminders, speech
+from ugharani import agent, db, followup, live, reminders, speech
 from ugharani.seed import seed
 
 
@@ -24,8 +24,10 @@ def fixed_sentences() -> list[str]:
         conn = db.connect(str(Path(tmp) / "seed.db"))
         seed(conn, today=date.today())
         summary = reminders.summary_text(reminders.due_items(conn, date.today()))
+        rules = followup.get_settings(conn)
+        openings = [agent.opening(rules, c) for c in followup.customers(conn)]  # the sample customers' calls
         conn.close()
-    return [summary, reminders.summary_text([]), *speech.QUESTIONS.values()]
+    return [summary, reminders.summary_text([]), *speech.QUESTIONS.values(), *live.FIXED_LINES, *openings]
 
 
 def main() -> None:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import mimetypes
 import os
@@ -8,12 +9,12 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from ugharani import db, followup, gnani, reminders, speech
+from ugharani import db, followup, gnani, live, llm, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
 
@@ -266,7 +267,7 @@ def _customer(conn, name: str) -> dict:
 
 
 @app.post("/calls")
-def place_call(req: CallRequest) -> dict:
+def place_call(req: CallRequest, tasks: BackgroundTasks) -> dict:
     """The owner taps 'call now': the customer's phone page starts ringing."""
     conn = db.connect()
     try:
@@ -276,18 +277,23 @@ def place_call(req: CallRequest) -> dict:
         last = c["last_call"]
         if last and last["status"] in ("ringing", "in_progress"):
             return last  # already calling them
+        tasks.add_task(live.warm_up, followup.get_settings(conn), c)
         return followup.get_call(conn, followup.start_call(conn, c["name"], c["balance"], "manual"))
     finally:
         conn.close()
 
 
 @app.post("/calls/run")
-def run_queue(today: date | None = None) -> list[dict]:
+def run_queue(tasks: BackgroundTasks, today: date | None = None) -> list[dict]:
     """The auto-ugharani tick: ring everyone due a call today under the owner's rules."""
     conn = db.connect()
     try:
-        return [followup.get_call(conn, followup.start_call(conn, q["customer"], q["amount"], "auto"))
-                for q in followup.to_call(conn, today or date.today())]
+        rules = followup.get_settings(conn)
+        rung = []
+        for q in followup.to_call(conn, today or date.today()):
+            tasks.add_task(live.warm_up, rules, _customer(conn, q["customer"]))
+            rung.append(followup.get_call(conn, followup.start_call(conn, q["customer"], q["amount"], "auto")))
+        return rung
     finally:
         conn.close()
 
@@ -332,6 +338,75 @@ def call_status(call_id: int, change: CallStatus) -> dict:
         return followup.get_call(conn, call_id)
     finally:
         conn.close()
+
+
+_live_calls: set[int] = set()
+
+
+def max_live_calls() -> int:
+    """Each live call streams to Gnani and Gemini; a public demo link can't open more than this at once."""
+    return int(os.getenv("MAX_LIVE_CALLS", "2"))
+
+
+@app.websocket("/calls/{call_id}/live")
+async def live_call(ws: WebSocket, call_id: int) -> None:
+    """The answered call's audio: the phone page sends the customer's PCM, gets the agent's back.
+
+    Binary frames both ways are 16 kHz mono PCM16. Text frames: the page may send
+    {"type": "hangup"}; the server sends {"type": "line", "who", "text"} and, when the
+    agent hangs up, {"type": "end"}.
+    """
+    conn = db.connect()
+    try:
+        call = followup.get_call(conn, call_id)
+        customer = next((c for c in followup.customers(conn) if call and c["name"] == call["customer"]), None)
+        rules = followup.get_settings(conn)
+        previous = followup.last_call(conn, call["customer"], before=call_id) if call else None
+    finally:
+        conn.close()
+    if call is None or customer is None or call["status"] != "in_progress":
+        await ws.close(code=4404 if call is None else 4409)
+        return
+    if call_id in _live_calls or len(_live_calls) >= max_live_calls():
+        await ws.close(code=4429)
+        return
+    _live_calls.add(call_id)
+    await ws.accept()
+    session = live.LiveCall(rules, customer, date.today(), previous, ws.send_bytes, ws.send_json)
+    try:
+        terms = [customer["name"], *(customer.get(k) for k in ("firm", "city", "deals_with")),
+                 rules["business_name_spoken"]]
+        async with gnani.live_stt([t for t in terms if t]) as stt:
+            async def from_phone():
+                while not session.done.is_set():
+                    kind, data = live.browser_message(await ws.receive())
+                    if kind == "audio":
+                        await stt.send(data)
+                    elif kind in ("hangup", "closed"):
+                        session.ended_by = session.ended_by or "customer"
+                        session.done.set()
+                        return
+
+            phone = asyncio.create_task(from_phone())
+            try:
+                await session.run(stt.events())
+            finally:
+                phone.cancel()
+    except (gnani.GnaniError, llm.LLMError) as e:
+        log.warning("call %s failed: %s", call_id, e)
+    finally:
+        _live_calls.discard(call_id)
+        log.info("call %s ended by %s after %d turns", call_id, session.ended_by, len(session.history))
+        conn = db.connect()
+        try:
+            # "failed" only if nothing was said at all; otherwise it's a (short) call worth noting
+            followup.end_live_call(conn, call_id, session.history, ok=bool(session.history))
+        finally:
+            conn.close()
+        try:
+            await ws.close()
+        except (RuntimeError, WebSocketDisconnect):
+            pass  # the phone already closed it
 
 
 @app.get("/calls/{call_id}")
