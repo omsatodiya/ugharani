@@ -2,8 +2,8 @@
 
     uv run python scripts/fake_voice_server.py      # then open http://localhost:8000/phone.html
 
-- live STT: checks the browser's frames (exactly 1024 bytes, about 31 per second) and, every
-  few seconds of audio, "hears" the next line of a scripted customer
+- live STT: checks the browser's frames (exactly 1024 bytes, about 31 per second) and "hears" a
+  scripted customer at fixed times into the call, one line cutting in while the agent talks
 - Timbre: a short tone per sentence (the opening and fixed lines too), so playback can be heard
 - Gemini is real (free tier) unless FAKE_LLM=1
 """
@@ -29,8 +29,10 @@ import uvicorn  # noqa: E402
 
 from ugharani import gnani, llm, main, speech  # noqa: E402
 
-CUSTOMER = ["હા બોલો", "હા, 10 તારીખે RTGS કરી દઈશ", "હા બરાબર", "આવજો"]
-SECONDS_PER_LINE = 4.0
+# (seconds of call audio when they start talking, what they say). The bundled opening plays from
+# about 1.2 s to 9.3 s; the agent's first reply from about 10.5 s for 3 s, so line 2 cuts into it.
+CUSTOMER = [(9.8, "હા બોલો"), (11.5, "અરે, મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"), (16.5, "હા બરાબર")]
+SPEAKING = 0.6  # each line lasts this long; the transcript comes when it ends
 
 
 def tone(seconds: float, freq: float = 440.0) -> bytes:
@@ -39,7 +41,7 @@ def tone(seconds: float, freq: float = 440.0) -> bytes:
 
 
 async def synthesize_stream(text: str):
-    seconds = min(2.5, 0.4 + len(text) / 40)
+    seconds = min(4.0, 0.4 + len(text) / 12)
     pcm = tone(seconds, 330 + (hash(text) % 300))
     for i in range(0, len(pcm), 3200):  # 100 ms chunks, like Timbre's stream
         await asyncio.sleep(0.02)
@@ -68,12 +70,17 @@ class FakeLiveSTT:
             rate = self.frames / (time.monotonic() - self.started)
             print(f"[fake stt] {self.frames} frames, {heard:.1f}s audio, {rate:.1f} frames/s, "
                   f"{self.bad} not 1024 bytes", flush=True)
-        if self.said < len(CUSTOMER) and heard >= SECONDS_PER_LINE * (self.said + 1):
-            text = CUSTOMER[self.said]
+        if self.said < len(CUSTOMER) and heard >= CUSTOMER[self.said][0]:
+            text = CUSTOMER[self.said][1]
             self.said += 1
             print(f"[fake stt] customer says: {text}", flush=True)
             await self.queue.put({"type": "speech_start"})
-            await self.queue.put({"type": "transcript", "text": text})
+
+            async def finish():  # like real VAD: voice heard now, the transcript once they stop
+                await asyncio.sleep(SPEAKING)
+                await self.queue.put({"type": "transcript", "text": text})
+
+            self.pending = asyncio.create_task(finish())
 
     async def events(self):
         while True:
@@ -88,7 +95,8 @@ async def live_stt(keyterms=None):
 
 async def fake_llm(system, history, max_tokens=400):
     turns = sum(h["who"] == "agent" for h in history)
-    yield ["₹1,00,000 બાકી છે, ક્યારે આવશે?", "તો 10 તારીખે RTGS, બરાબર ને?", "સારું, આભાર. આવજો. <END>"][min(turns - 1, 2)]
+    yield ["₹1,00,000 બાકી છે, ક્યારે આવશે?", "અચ્છા. તો UTR નંબર મોકલી દેશો?",
+           "સારું, આભાર. આવજો. <END>"][min(turns - 1, 2)]
 
 
 gnani.synthesize_stream = synthesize_stream
