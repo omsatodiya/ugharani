@@ -69,6 +69,24 @@ Payments settle a buyer's oldest credits first. Both take `?today=YYYY-MM-DD` so
 Every Timbre clip is cached in `out/tts/` by sentence, so repeating a sentence costs no credits.
 `GET /audio/{key}.wav` serves those clips.
 
+## Follow-up calls (auto ugharani)
+
+The agent (કાવ્યા, from Genius Polyplast's accounts office) calls customers with pending payments.
+The customer's phone is a web page for now: open `/phone.html`, pick a customer, tap once to
+receive calls. `POST /calls {"customer": ...}` (or `POST /calls/run` for everyone due today) makes it ring.
+
+An answered call streams over `/calls/{id}/live`: the page sends the mic as 16 kHz PCM16, the
+server forwards it to Gnani's live STT (`gu-IN`, VAD-cut transcripts), Gemini writes the reply
+(`ugharani/agent.py` has her job), Timbre speaks it sentence by sentence, and the page plays it
+through a phone-line filter. A filler covers a slow reply; long silence gets "હેલો?" then a polite
+goodbye; the transcript is saved when the call ends. `MAX_LIVE_CALLS` (default 2) caps calls at once.
+
+```bash
+uv run python scripts/agent_chat.py promise          # typed conversations, Gemini only (free)
+uv run python scripts/fake_voice_server.py           # phone page with Gnani faked (free): tests the audio path
+uv run python scripts/live_call.py                   # a real call, a 2nd Timbre voice as the customer (credits)
+```
+
 ## App and deploy
 
 `uv run uvicorn ugharani.main:app` also serves the PWA at http://localhost:8000: tap the mic,
