@@ -70,15 +70,43 @@ async def generate_json(system: str, history: list[dict], schema: dict) -> dict:
         raise LLMError(f"not JSON: {text[:200]}") from None
 
 
+# On a call, a reply that hasn't started within this long is abandoned and asked again: flash-lite
+# usually starts in ~1 s but now and then stalls for 10 s+, and a retry is faster than waiting it out.
+FIRST_CHUNK_TIMEOUT = 4.0
+
+
 async def stream(system: str, history: list[dict], max_tokens: int = 400) -> AsyncIterator[str]:
-    """Yield the reply as it is generated, so speech can start on the first sentence."""
-    async with httpx.AsyncClient(timeout=30) as client:
-        async with client.stream("POST", f"{BASE}/{model()}:streamGenerateContent",
-                                 params={"key": _key(), "alt": "sse"},
-                                 json=_body(system, history, None, max_tokens)) as resp:
-            if resp.status_code != 200:
-                raise LLMError(f"HTTP {resp.status_code}: {(await resp.aread()).decode(errors='replace')[:300]}")
-            async for line in resp.aiter_lines():
-                if line.startswith("data:"):
-                    if chunk := _text(json.loads(line[5:])):
-                        yield chunk
+    """Yield the reply as it is generated, so speech can start on the first sentence.
+
+    Tries flash-lite twice (each with a short wait for the first chunk), then the fallback model.
+    """
+    body = _body(system, history, None, max_tokens)
+    attempts = [(model(), FIRST_CHUNK_TIMEOUT), (model(), FIRST_CHUNK_TIMEOUT), (fallback_model(), 20.0)]
+    last = "no attempt"
+    for name, wait in attempts:
+        timeout = httpx.Timeout(30.0, read=wait)  # read: also the wait for the first bytes
+        started = False
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", f"{BASE}/{name}:streamGenerateContent",
+                                         params={"key": _key(), "alt": "sse"}, json=body) as resp:
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        last = f"HTTP {resp.status_code}"
+                        continue  # rate limited or overloaded: try again / the fallback
+                    if resp.status_code != 200:
+                        raise LLMError(f"HTTP {resp.status_code}: {(await resp.aread()).decode(errors='replace')[:300]}")
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data:"):
+                            if chunk := _text(json.loads(line[5:])):
+                                started = True
+                                yield chunk
+                    if started:
+                        return
+                    last = "empty reply"
+        except httpx.TimeoutException:
+            if started:  # half a reply was already spoken: don't start it again
+                raise LLMError(f"{name} stalled mid-reply") from None
+            last = f"{name}: no reply in {wait:.0f}s"
+        except httpx.TransportError as e:
+            last = f"{name}: {type(e).__name__}"
+    raise LLMError(f"no reply after {len(attempts)} tries ({last})")

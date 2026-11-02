@@ -4,6 +4,8 @@ Every clip costs Timbre credits, so the same sentence is only ever synthesised o
 """
 
 import hashlib
+import wave
+from collections.abc import AsyncIterator
 from datetime import date
 from pathlib import Path
 
@@ -35,6 +37,38 @@ async def speak(text: str) -> str:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(wav)
     return key
+
+
+def _save(key: str, pcm: bytes) -> None:
+    path = Path(audio_cache_dir()) / f"{key}.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gnani._wav(pcm))
+
+
+def cached_pcm(text: str) -> bytes | None:
+    """The sentence's raw 16 kHz PCM if it was synthesised before, else None (costs nothing)."""
+    path = clip_path(clip_key(text))
+    if not path.exists():
+        return None
+    try:
+        with wave.open(str(path), "rb") as w:
+            if (w.getframerate(), w.getnchannels(), w.getsampwidth()) != (gnani.TTS_SAMPLE_RATE, 1, 2):
+                return None  # not a clip this app made
+            return w.readframes(w.getnframes())
+    except (wave.Error, EOFError):
+        return None
+
+
+async def stream_pcm(text: str) -> AsyncIterator[bytes]:
+    """Say `text` on a call: the cached clip at once, or Timbre's audio as it streams (then cached)."""
+    if (pcm := cached_pcm(text)) is not None:
+        yield pcm
+        return
+    made = bytearray()
+    async for chunk in gnani.synthesize_stream(text):
+        made += chunk
+        yield chunk
+    _save(clip_key(text), bytes(made))
 
 
 def rupees(amount: int) -> str:
