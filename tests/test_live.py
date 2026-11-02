@@ -13,6 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from ugharani import gnani, live, llm, main, speech
 
+LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 OPENING = "નમસ્તે, રમેશભાઈ બોલો છો? હું કાવ્યા, જીનિયસ પોલીપ્લાસ્ટ, ગોંડલથી બોલું છું. આ કૉલ રેકોર્ડ થાય છે."
 
 
@@ -44,7 +45,7 @@ def phone(tmp_path, monkeypatch):
 
     async def synthesize_stream(text):
         rec["tts"].append(text)
-        yield b"\x01\x00" * int(16000 * rec["speech_seconds"].get(text, 0.001))
+        yield LOUD * int(16000 * rec["speech_seconds"].get(text, 0.1))
 
     async def synthesize(text):
         return gnani._wav(b"".join([c async for c in synthesize_stream(text)]))
@@ -69,7 +70,7 @@ def phone(tmp_path, monkeypatch):
     monkeypatch.setattr(gnani, "live_stt", live_stt)
     monkeypatch.setattr(llm, "stream", stream)
     for name, value in {"GREETING_WAIT": 0.05, "FILLER_AFTER": 5, "NO_REPLY": 5, "AFTER_LAST_WORD": 0,
-                        "ECHO_MARGIN": 0.0}.items():
+                        "ECHO_MARGIN": 0.5}.items():
         monkeypatch.setattr(live, name, value)
 
     client = TestClient(main.app)
@@ -94,7 +95,7 @@ def until(ws, want):
         if msg.get("bytes") is not None:
             audio += len(msg["bytes"])
             continue
-        assert "text" in msg, msg
+        assert "text" in msg, (msg, events, audio)
         event = json.loads(msg["text"])
         events.append(event)
         if all(event.get(k) == v for k, v in want.items()):
@@ -108,8 +109,8 @@ def lines(events):
 def test_a_whole_call_from_hello_to_goodbye(phone):
     client, call_id, rec = phone
     rec["replies"] = [
-        "રમેશભાઈ, ₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?",
-        "તો 10 નવેમ્બરે RTGS, બરાબર ને?",
+        "જી. ₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?",
+        "સારું. તો 10 નવેમ્બરે RTGS, બરાબર ને?",
         "સારું, આભાર રમેશભાઈ. આવજો. <END>",
     ]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
@@ -117,17 +118,20 @@ def test_a_whole_call_from_hello_to_goodbye(phone):
         assert lines(events) == [("agent", OPENING)] and audio > 0
 
         say(ws, "હા બોલો")
-        events, _ = until(ws, {"text": "પેમેન્ટ ક્યારે આવશે?"})
-        assert lines(events)[0] == ("customer", "હા બોલો")
+        events, _ = until(ws, {"text": "₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?"})
+        # the acknowledgement alone (a bundled clip), then the rest of the reply in one piece
+        assert lines(events) == [("customer", "હા બોલો"), ("agent", "જી."),
+                                 ("agent", "₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?")]
         say(ws, "10 તારીખે RTGS કરી દઈશ")
         until(ws, {"text": "તો 10 નવેમ્બરે RTGS, બરાબર ને?"})
         say(ws, "હા")
         events, _ = until(ws, {"type": "end"})
-        assert lines(events)[-2:] == [("agent", "સારું, આભાર રમેશભાઈ."), ("agent", "આવજો.")]
+        assert lines(events)[-1] == ("agent", "સારું, આભાર રમેશભાઈ. આવજો.")  # not split: one intonation
 
     call = client.get(f"/calls/{call_id}").json()
     assert call["status"] == "completed" and call["ended_at"]
     assert [t["who"] for t in call["transcript"]] == ["agent", "customer"] * 3 + ["agent"]
+    assert call["transcript"][2]["text"] == "જી. ₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?"
     assert call["transcript"][-1]["text"] == "સારું, આભાર રમેશભાઈ. આવજો."
     # Gemini saw the whole conversation so far each time
     assert rec["histories"][1][-1] == {"who": "customer", "text": "10 તારીખે RTGS કરી દઈશ"}
@@ -155,7 +159,7 @@ def test_customer_hello_is_answered_by_the_opening(phone, monkeypatch):
 
 def test_speech_over_the_agent_is_treated_as_echo(phone):
     client, call_id, rec = phone
-    speech._save(speech.clip_key(OPENING), bytes([1, 0]) * 16000)  # the opening plays for a second
+    speech._save(speech.clip_key(OPENING), LOUD * 16000)  # the opening plays for a second
     rec["replies"] = ["આવજો. <END>"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
@@ -189,12 +193,14 @@ def test_silence_gets_a_hello_then_a_goodbye(phone, monkeypatch):
 def test_slow_reply_gets_a_filler_without_a_double_ack(phone, monkeypatch):
     client, call_id, rec = phone
     monkeypatch.setattr(live, "FILLER_AFTER", 0.05)
-    rec["replies"] = [(0.4, "હા, 10 તારીખે બરાબર. આવજો. <END>")]
+    rec["replies"] = [(0.4, "જી. 10 તારીખે બરાબર. આવજો. <END>")]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
+        time.sleep(0.2)  # the opening has finished playing: a filler only plays into silence
         say(ws, "10 તારીખે આપી દઈશ")
         events, audio = until(ws, {"type": "end"})
-    assert ("agent", "10 તારીખે બરાબર.") in lines(events) and audio > 0
+    said = [t for who, t in lines(events) if who == "agent"]
+    assert said == ["10 તારીખે બરાબર. આવજો."] and audio > 0  # the filler replaced the reply's own "જી."
 
 
 def test_more_speech_before_the_reply_restarts_it(phone):
@@ -248,6 +254,48 @@ def test_sentences_are_cut_from_the_token_stream():
         return [s async for s in live.sentences(tokens())]
 
     assert asyncio.run(collect()) == ["હા, ₹50,000 મળી ગયા.", "હવે બાકી ક્યારે?", "આવજો.", "<END>"]
+
+
+def test_segments_keep_a_reply_in_one_piece():
+    async def sents(*items):
+        for s in items:
+            yield s
+
+    async def collect(*items):
+        return [s async for s in live.segments(sents(*items))]
+
+    # the acknowledgement alone, the rest together
+    assert asyncio.run(collect("જી.", "₹50,000 મળી ગયા.", "બાકી ક્યારે?")) == ["જી.", "₹50,000 મળી ગયા. બાકી ક્યારે?"]
+    # no acknowledgement: all one piece
+    assert asyncio.run(collect("તો 10 તારીખે.", "બરાબર ને?")) == ["તો 10 તારીખે. બરાબર ને?"]
+    # a long reply is split at a sentence end
+    long = "ક" * 100 + "."
+    assert asyncio.run(collect(long, long)) == [long, long]
+
+
+def test_a_segment_starts_only_with_enough_audio_held_back(phone):
+    """Timbre's small chunks are held until PREBUFFER is ready, so the phone never runs dry mid-word."""
+    client, call_id, rec = phone
+
+    async def trickle(text):  # 100 ms chunks, arriving a little slower than real time
+        for _ in range(10):
+            await asyncio.sleep(0.01)
+            yield LOUD * 1600
+
+    rec["replies"] = ["₹1,00,000 બાકી છે. આવજો. <END>"]
+    sizes = []
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        gnani.synthesize_stream = trickle  # (restored by monkeypatch after the test)
+        say(ws, "હા બોલો")
+        while True:
+            msg = ws.receive()
+            if msg.get("bytes") is not None:
+                sizes.append(len(msg["bytes"]))
+            elif json.loads(msg["text"])["type"] == "end":
+                break
+    assert sizes[0] >= live.PREBUFFER * live.BYTES_PER_SECOND  # first send: 0.4 s at once
+    assert sum(sizes) == 10 * 3200
 
 
 def test_drop_ack():
@@ -386,3 +434,19 @@ def test_fixed_call_lines_ship_with_the_app():
     shipped = Path(speech.__file__).parent / "clips"  # (conftest hides it from the other tests)
     for text in live.FIXED_LINES:
         assert (shipped / f"{speech.clip_key(text)}.wav").exists(), text
+
+
+def test_timbre_silence_is_trimmed_but_pauses_inside_are_kept():
+    silence, word, click = bytes(640) * 30, bytes([0, 16]) * 320 * 10, bytes([0, 16]) * 320
+
+    async def chunks():
+        audio = silence + word + bytes(640) * 10 + word + silence + click + silence
+        for i in range(0, len(audio), 1000):  # odd-sized chunks, like the network
+            yield audio[i:i + 1000]
+
+    async def collect():
+        return b"".join([c async for c in speech.trimmed(chunks())])
+
+    out = asyncio.run(collect())
+    lead, inner, tail = speech.LEAD_KEEP, 640 * 10, speech.TAIL_KEEP
+    assert len(out) == lead + len(word) + inner + len(word) + tail  # the click after the silence is gone

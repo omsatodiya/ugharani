@@ -9,7 +9,8 @@ frames in and out, so a telephony media stream could replace it later.
 Turn-taking, as a person on the phone would do it:
 - wait a moment for the customer's "હેલો" before the opening line
 - while the agent's reply is still being written, more speech from the customer restarts it
-- a short filler ("જી,") covers a slow reply, so the line is never silent for long
+- a reply starts with a short acknowledgement ("જી.") from a bundled clip; a filler covers a slow one
+- audio is fetched a segment ahead and held back a moment, so speech never breaks up mid-word
 - speech heard while the agent is still talking is treated as echo and ignored (barge-in: next)
 - long silence: "હેલો? સાંભળાય છે?", then a polite goodbye
 - the agent ends the call with agent.END; a hard time limit protects the credits
@@ -32,7 +33,8 @@ BYTES_PER_SECOND = gnani.TTS_SAMPLE_RATE * 2  # 16 kHz mono PCM16
 # Timings in seconds; tests shorten them.
 GREETING_WAIT = 1.2    # how long to wait for the customer's "હેલો" before speaking first
 GREETING_HEARD = 4.0   # once they started saying something, wait this long for the transcript
-FILLER_AFTER = 0.9     # reply not started by then: say a filler
+FILLER_AFTER = 1.6     # reply not started by then: say a filler (the reply's own "જી." usually comes first)
+PREBUFFER = 0.4        # audio held back before a segment starts, so the phone never runs dry mid-word
 NO_REPLY = 8.0         # silence after the agent finishes before "hello?"
 MAX_CALL = 240.0       # then wrap up, whatever is going on
 ECHO_MARGIN = 0.4      # speech starting this close to the end of the agent's audio still counts
@@ -40,11 +42,14 @@ AFTER_LAST_WORD = 0.6  # pause after the goodbye before the line drops
 
 # Fixed lines: synthesised once, then always played from the cache.
 FILLERS = ["જી,", "હા,", "અચ્છા,"]
+# The short acknowledgements the agent starts a reply with (agent.py asks for exactly these):
+# bundled clips, so the first word of a reply plays the moment Gemini writes it.
+ACKS = ["હા જી.", "જી.", "સારું.", "બરાબર.", "અચ્છા.", "હં."]
 HELLO = "હેલો? સાંભળાય છે?"
 NO_ANSWER_BYE = "લાગે છે લાઇન બરાબર નથી. હું થોડી વાર પછી ફોન કરું છું. આવજો."
 SORRY = "માફ કરજો, લાઇન થોડી ખરાબ છે. ફરી કહેશો?"
 LINE_DROP_BYE = "માફ કરજો, લાઇનમાં તકલીફ છે. હું પછી ફોન કરું છું. આવજો."
-FIXED_LINES = [*FILLERS, HELLO, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE]
+FIXED_LINES = [*FILLERS, *ACKS, HELLO, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE]
 
 
 def time_up_bye(settings: dict) -> str:
@@ -65,6 +70,31 @@ async def sentences(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
                 yield s.strip()
     if buf.strip():
         yield buf.strip()
+
+
+GROUP_CHARS = 160  # up to this much is spoken in one Timbre request: one intonation, no seams
+
+
+async def segments(sents: AsyncIterator[str]) -> AsyncIterator[str]:
+    """What to synthesise in one go.
+
+    A leading acknowledgement goes alone (it plays from a bundled clip at once); the rest of the
+    reply goes together so the voice keeps one intonation, split at sentence ends only when long.
+    """
+    group, first = "", True
+    async for s in sents:
+        if first:
+            first = False
+            if s in ACKS:
+                yield s
+                continue
+        if group and len(group) + 1 + len(s) > GROUP_CHARS:
+            yield group
+            group = s
+        else:
+            group = f"{group} {s}".strip()
+    if group:
+        yield group
 
 
 ACK = re.compile(r"^(હા|જી|હા જી|અચ્છા|બરાબર|સારું|ઓકે)[,.!]?\s+")
@@ -100,6 +130,7 @@ class LiveCall:
         self._prompted = False  # said "hello?" since the customer last spoke
         self._ending = False
         self._carry = b""
+        self._fetches: set[asyncio.Task] = set()  # audio being fetched ahead of playing
 
     # ---------- speaking ----------
 
@@ -114,10 +145,54 @@ class LiveCall:
             self._speaking_until = max(self._now(), self._speaking_until) + len(pcm) / BYTES_PER_SECOND
             await self._send_audio(pcm)
 
-    async def say(self, text: str) -> None:
-        async for chunk in speech.stream_pcm(text):
-            await self._audio(chunk)
+    def _fetch(self, text: str) -> asyncio.Queue:
+        """Start getting `text`'s audio now; its chunks (then None, or an exception) arrive on the queue."""
+        out: asyncio.Queue = asyncio.Queue()
+
+        async def run():
+            t0, first, size = self._now(), None, 0
+            try:
+                async for chunk in speech.stream_pcm(text):
+                    first = first or self._now()
+                    size += len(chunk)
+                    await out.put(chunk)
+                await out.put(None)
+            except Exception as e:  # handed to whoever plays it
+                await out.put(e)
+                return
+            took, audio = self._now() - t0, size / BYTES_PER_SECOND
+            log.info("tts: first audio %.2fs, done %.2fs for %.1fs of speech (%.1fx real time): %s",
+                     (first or self._now()) - t0, took, audio, audio / took if took else 0, text[:40])
+
+        task = asyncio.create_task(run())
+        self._fetches.add(task)
+        task.add_done_callback(self._fetches.discard)
+        return out
+
+    async def _play(self, text: str, out: asyncio.Queue) -> None:
+        """Send one segment's audio, holding back PREBUFFER of it first: Timbre's first chunks come in
+        bursts, and a phone that has started a word must not run dry before the rest arrives."""
+        need = PREBUFFER * BYTES_PER_SECOND
+        held: bytearray | None = bytearray()
+        while (chunk := await out.get()) is not None:
+            if isinstance(chunk, Exception):
+                raise chunk
+            if held is not None:
+                held += chunk
+                if len(held) >= need:
+                    await self._audio(bytes(held))
+                    held = None
+            else:
+                gap = self._now() - self._speaking_until
+                if gap > 0.02:
+                    log.info("call: the phone ran dry for %.2fs mid-sentence", gap)
+                await self._audio(chunk)
+        if held:
+            await self._audio(bytes(held))
         await self._send_event({"type": "line", "who": "agent", "text": text})
+
+    async def say(self, text: str) -> None:
+        await self._play(text, self._fetch(text))
 
     def _add(self, who: str, text: str) -> None:
         if self.history and self.history[-1]["who"] == who:
@@ -161,21 +236,43 @@ class LiveCall:
     async def _reply(self) -> None:
         self._turn_spoke = False
         self._filled = False
+        heard_at = self._now()
         filler = asyncio.create_task(self._filler_later())
         spoken: list[str] = []
         hang = False
         system = agent.system_prompt(self.settings, self.customer, self.today, self.last_call)
+        ready: asyncio.Queue = asyncio.Queue()  # (text, audio queue) in speaking order; None at the end
+
+        async def write():
+            """Gemini's reply, cut into segments; each segment's audio is fetched as soon as it exists."""
+            nonlocal hang
+            try:
+                async for seg in segments(sentences(llm.stream(system, self.history))):
+                    text, end = agent.split_end(seg)
+                    hang |= end
+                    if not text:
+                        continue
+                    if self._filled and not self._turn_spoke:
+                        if text in ACKS:
+                            continue  # the filler already acknowledged
+                        text = drop_ack(text)
+                    log.info("turn: segment ready %.2fs after the customer: %s", self._now() - heard_at, text[:40])
+                    await ready.put((text, self._fetch(text)))
+                await ready.put(None)
+            except Exception as e:
+                await ready.put(e)
+
+        writer = asyncio.create_task(write())
         try:
-            async for raw in sentences(llm.stream(system, self.history)):
-                text, end = agent.split_end(raw)
-                hang |= end
-                if not text:
-                    continue
-                if not spoken and self._filled:
-                    text = drop_ack(text)
+            while (item := await ready.get()) is not None:
+                if isinstance(item, Exception):
+                    raise item
+                text, audio = item
                 filler.cancel()
+                if not self._turn_spoke:
+                    log.info("turn: first audio %.2fs after the customer", self._now() - heard_at)
                 self._turn_spoke = True
-                await self.say(text)
+                await self._play(text, audio)
                 spoken.append(text)
         except (llm.LLMError, gnani.GnaniError) as e:
             log.warning("call: reply failed: %s", e)
@@ -185,6 +282,7 @@ class LiveCall:
                 spoken.append(SORRY)
         finally:
             filler.cancel()
+            writer.cancel()
             if spoken:
                 self._add("agent", " ".join(spoken))
         if hang:

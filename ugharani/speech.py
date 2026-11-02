@@ -59,8 +59,7 @@ def cached_pcm(text: str) -> bytes | None:
         return None
 
 
-async def stream_pcm(text: str) -> AsyncIterator[bytes]:
-    """Say `text` on a call: the cached clip at once, or Timbre's audio as it streams (then cached)."""
+async def _raw_pcm(text: str) -> AsyncIterator[bytes]:
     if (pcm := cached_pcm(text)) is not None:
         yield pcm
         return
@@ -69,6 +68,49 @@ async def stream_pcm(text: str) -> AsyncIterator[bytes]:
         made += chunk
         yield chunk
     _save(clip_key(text), bytes(made))
+
+
+WINDOW = 640          # 20 ms of 16 kHz PCM16
+VOICED_RMS = 400      # about -38 dBFS: quieter than this is silence or line noise
+VOICED_RUN = 3        # 60 ms of sound in a row is speech; a lone click isn't
+LEAD_KEEP = 4 * WINDOW   # 80 ms before the first word
+TAIL_KEEP = 8 * WINDOW   # 160 ms after the last word: a natural end, not a gap
+
+
+def _voiced(window: bytes) -> bool:
+    samples = memoryview(window).cast("h")
+    return (sum(s * s for s in samples) / len(samples)) ** 0.5 > VOICED_RMS
+
+
+async def trimmed(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Drop Timbre's silence before the first word and after the last (up to ~1 s, sometimes with a
+    click), which otherwise sounds like a pause between every sentence. Pauses inside are kept."""
+    buf = bytearray()      # bytes not yet cut into windows
+    pending = bytearray()  # windows since the last confirmed speech: a pause, or the trailing silence
+    run, started = 0, False
+    async for chunk in chunks:
+        buf += chunk
+        while len(buf) >= WINDOW:
+            window, buf = bytes(buf[:WINDOW]), buf[WINDOW:]
+            pending += window
+            run = run + 1 if _voiced(window) else 0
+            if run >= VOICED_RUN:
+                if not started:  # keep only a breath before the first word
+                    started = True
+                    pending = pending[-(VOICED_RUN * WINDOW + LEAD_KEEP):]
+                yield bytes(pending)
+                pending = bytearray()
+            elif not started and len(pending) > LEAD_KEEP + VOICED_RUN * WINDOW:
+                del pending[:WINDOW]  # leading silence: never sent
+    if started:
+        yield bytes(pending[:TAIL_KEEP])
+
+
+async def stream_pcm(text: str) -> AsyncIterator[bytes]:
+    """Say `text` on a call: the cached clip at once, or Timbre's audio as it streams (then cached),
+    without the silence around it."""
+    async for chunk in trimmed(_raw_pcm(text)):
+        yield chunk
 
 
 def rupees(amount: int) -> str:
