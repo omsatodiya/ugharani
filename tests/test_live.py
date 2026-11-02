@@ -123,15 +123,15 @@ def test_a_whole_call_from_hello_to_goodbye(phone):
         assert lines(events) == [("agent", OPENING)] and audio > 0
 
         say(ws, "હા બોલો")
-        events, _ = until(ws, {"text": "₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?"})
+        events, _ = until(ws, {"text": "પેમેન્ટ ક્યારે આવશે?"})
         # the acknowledgement alone (a bundled clip), then the rest of the reply in one piece
         assert lines(events) == [("customer", "હા બોલો"), ("agent", "જી."),
-                                 ("agent", "₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?")]
+                                 ("agent", "₹1,00,000 બાકી છે."), ("agent", "પેમેન્ટ ક્યારે આવશે?")]
         say(ws, "10 તારીખે RTGS કરી દઈશ")
         until(ws, {"text": "તો 10 નવેમ્બરે RTGS, બરાબર ને?"})
         say(ws, "હા")
         events, _ = until(ws, {"type": "end"})
-        assert lines(events)[-1] == ("agent", "સારું, આભાર રમેશભાઈ. આવજો.")  # not split: one intonation
+        assert lines(events)[-2:] == [("agent", "સારું, આભાર રમેશભાઈ."), ("agent", "આવજો.")]
 
     call = client.get(f"/calls/{call_id}").json()
     assert call["status"] == "completed" and call["ended_at"]
@@ -205,7 +205,7 @@ def test_slow_reply_gets_a_filler_without_a_double_ack(phone, monkeypatch):
         say(ws, "10 તારીખે આપી દઈશ")
         events, audio = until(ws, {"type": "end"})
     said = [t for who, t in lines(events) if who == "agent"]
-    assert said == ["10 તારીખે બરાબર. આવજો."] and audio > 0  # the filler replaced the reply's own "જી."
+    assert said == ["10 તારીખે બરાબર.", "આવજો."] and audio > 0  # the filler replaced the reply's own "જી."
 
 
 def test_more_speech_before_the_reply_restarts_it(phone):
@@ -269,13 +269,13 @@ def test_segments_keep_a_reply_in_one_piece():
     async def collect(*items):
         return [s async for s in live.segments(sents(*items))]
 
-    # the acknowledgement alone, the rest together
-    assert asyncio.run(collect("જી.", "₹50,000 મળી ગયા.", "બાકી ક્યારે?")) == ["જી.", "₹50,000 મળી ગયા. બાકી ક્યારે?"]
+    # the acknowledgement alone, then the first sentence alone (it starts fast), then the rest together
+    assert asyncio.run(collect("જી.", "₹50,000 મળી ગયા.", "બાકી ક્યારે?", "કહેજો.")) ==         ["જી.", "₹50,000 મળી ગયા.", "બાકી ક્યારે? કહેજો."]
     # no acknowledgement: all one piece
-    assert asyncio.run(collect("તો 10 તારીખે.", "બરાબર ને?")) == ["તો 10 તારીખે. બરાબર ને?"]
+    assert asyncio.run(collect("તો 10 તારીખે.", "બરાબર ને?", "કહેજો.")) == ["તો 10 તારીખે.", "બરાબર ને? કહેજો."]
     # a long reply is split at a sentence end
     long = "ક" * 100 + "."
-    assert asyncio.run(collect(long, long)) == [long, long]
+    assert asyncio.run(collect("જી.", "હા.", long, long)) == ["જી.", "હા.", long, long]
 
 
 def test_a_segment_starts_only_with_enough_audio_held_back(phone):
@@ -300,7 +300,7 @@ def test_a_segment_starts_only_with_enough_audio_held_back(phone):
             elif json.loads(msg["text"])["type"] == "end":
                 break
     assert sizes[0] >= live.PREBUFFER * live.BYTES_PER_SECOND  # first send: 0.4 s at once
-    assert sum(sizes) == 10 * 3200
+    assert sum(sizes) == 2 * 10 * 3200  # (two segments: the first sentence, then the rest)
 
 
 def test_drop_ack():
@@ -473,6 +473,7 @@ def _start_long_reply(ws):
     time.sleep(0.6)  # (finished playing)
     say(ws, "હા બોલો")
     until(ws, {"text": LONG_LINE})  # all its audio is sent; the phone plays it for the next few seconds
+    time.sleep(live.ECHO_ONSET + 0.1)  # past the moment her own echo would start: now it's someone else
 
 
 def test_talking_over_her_stops_her_and_gets_an_answer(phone):
@@ -578,3 +579,40 @@ def test_the_opening_is_never_cut_short(phone):
     assert ("customer", "હા બોલો, શું કામ છે") in lines(events)
     transcript = client.get(f"/calls/{call_id}").json()["transcript"]
     assert transcript[0] == {"who": "agent", "text": OPENING}  # whole
+
+
+def test_her_filler_coming_back_is_not_taken_for_the_customer(phone, monkeypatch):
+    """Found on a real call: the filler leaked into the mic, was heard as the customer saying
+    'જી', restarted the reply, which played another filler... and she never answered."""
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "FILLER_AFTER", 0.05)
+    monkeypatch.setattr(live, "FILLERS", ["જી,"])
+    rec["replies"] = [(0.6, "સારું. આવજો. <END>")]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        time.sleep(0.6)
+        say(ws, "10 તારીખે આપીશ")
+        while ws.receive().get("bytes") is None:  # the filler's audio
+            pass
+        say(ws, "જી")  # ...heard back through the mic
+        events, _ = until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 1  # the reply was not restarted
+    assert [t["who"] for t in client.get(f"/calls/{call_id}").json()["transcript"]] == \
+        ["agent", "customer", "agent"]
+
+
+def test_ha_said_as_she_finishes_a_question_is_its_answer(phone):
+    client, call_id, rec = phone
+    question = "તો 10 તારીખે ₹1,00,000 RTGS, બરાબર ને?"
+    rec["speech_seconds"][question] = 1.2
+    rec["replies"] = [f"જી. {question}", "સારું, આભાર. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        time.sleep(0.6)
+        say(ws, "10 તારીખે કરી દઈશ")
+        until(ws, {"text": question})
+        time.sleep(0.7)  # past her echo's onset, ~0.5 s of the question still to play
+        say(ws, "હા")
+        events, _ = until(ws, {"type": "end"})
+    assert "clear" not in [e["type"] for e in events]  # no need to stop her
+    assert rec["histories"][-1][-1] == {"who": "customer", "text": "હા"}  # answered, not ignored

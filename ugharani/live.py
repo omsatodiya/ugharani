@@ -43,6 +43,10 @@ MAX_CALL = 240.0       # then wrap up, whatever is going on
 ECHO_MARGIN = 0.4      # speech starting this close to the end of the agent's audio still counts
 AFTER_LAST_WORD = 0.6  # pause after the goodbye before the line drops
 DUCK_MAX = 2.0         # her voice dips when talked over; back up if no words follow by then
+ECHO_ONSET = 0.6       # her own voice reaches the mic this soon after she starts: no ducking yet
+ECHO_TAIL = 0.2        # speech starting this soon after she stops may still be her echo
+FILLER_GAP = 4.0       # at most one filler this often
+ANSWER_EARLY = 1.5     # words heard this close to the end of her question are its answer
 ECHO_WINDOW = 15.0     # an overheard transcript is compared with what she said this recently
 ECHO_SIMILARITY = 0.6  # share of its letters lining up with her lines: above this it's her own echo
 
@@ -84,16 +88,21 @@ GROUP_CHARS = 160  # up to this much is spoken in one Timbre request: one intona
 async def segments(sents: AsyncIterator[str]) -> AsyncIterator[str]:
     """What to synthesise in one go.
 
-    A leading acknowledgement goes alone (it plays from a bundled clip at once); the rest of the
-    reply goes together so the voice keeps one intonation, split at sentence ends only when long.
+    A leading acknowledgement goes alone (it plays from a bundled clip at once). So does the first
+    sentence after it: Timbre starts a short text sooner (~0.5 s vs ~1 s for a long one), which
+    keeps the pause after "જી." short. The rest goes together, split at sentence ends only when long.
     """
-    group, first = "", True
+    group, opened, led = "", False, False
     async for s in sents:
-        if first:
-            first = False
+        if not opened:
+            opened = True
             if s in ACKS:
                 yield s
                 continue
+        if not led:  # the first real sentence: alone, so it starts fast
+            led = True
+            yield s
+            continue
         if group and len(group) + 1 + len(s) > GROUP_CHARS:
             yield group
             group = s
@@ -156,6 +165,10 @@ def is_backchannel(text: str) -> bool:
     return 0 < len(words) <= 2 and (" ".join(words) in BACKCHANNEL or all(w in BACKCHANNEL for w in words))
 
 
+async def _once(pcm: bytes) -> AsyncIterator[bytes]:
+    yield pcm
+
+
 class LiveCall:
     """One answered call. `send_audio` / `send_event` reach the customer's phone."""
 
@@ -176,6 +189,9 @@ class LiveCall:
         self._turn_spoke = False
         self._filled = False
         self._last_filler: str | None = None  # never the same filler twice in a row
+        self._filler_at = -FILLER_GAP
+        self._stretch_start = 0.0  # when she last started talking after a silence
+        self._lead = 0.0  # at the customer's speech_start: how much of her audio was left (<0: she'd stopped)
         self._again = False  # the customer spoke again while a reply was already being spoken
         self._prompted = False  # said "hello?" since the customer last spoke
         self._ending = False
@@ -199,8 +215,15 @@ class LiveCall:
         if len(pcm) % 2:  # never split a sample between two messages
             pcm, self._carry = pcm[:-1], pcm[-1:]
         if pcm:
+            if self._speaking_until < self._now():
+                self._stretch_start = self._now()  # she starts talking after a silence
             self._speaking_until = max(self._now(), self._speaking_until) + len(pcm) / BYTES_PER_SECOND
             await self._send_audio(pcm)
+
+    def _on_timeline(self, text: str, start: float, end: float) -> dict:
+        entry = {"text": text, "start": start, "end": end}
+        self._timeline = [e for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW] + [entry]
+        return entry
 
     def _fetch(self, text: str) -> asyncio.Queue:
         """Start getting `text`'s audio now; its chunks (then None, or an exception) arrive on the queue."""
@@ -237,8 +260,7 @@ class LiveCall:
             nonlocal entry
             if entry is None:  # this segment starts playing when the audio before it ends
                 start = max(self._now(), self._speaking_until)
-                entry = {"text": text, "start": start, "end": start}
-                self._timeline = [e for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW] + [entry]
+                entry = self._on_timeline(text, start, start)
             await self._audio(pcm)
             entry["end"] = self._speaking_until
 
@@ -293,13 +315,18 @@ class LiveCall:
 
     async def _filler_later(self) -> None:
         await asyncio.sleep(FILLER_AFTER)
-        if not self.speaking():
-            self._last_filler = text = random.choice([f for f in FILLERS if f != self._last_filler])
-            pcm = speech.cached_pcm(text)
-            if pcm is not None:  # only ever a cached clip: a filler must be instant
-                await self._audio(pcm)
-                self._filled = True
-                log.info("call: filler %s", text)
+        if self.speaking() or self._now() - self._filler_at < FILLER_GAP:
+            return
+        text = random.choice([f for f in FILLERS if f != self._last_filler] or FILLERS)
+        pcm = speech.cached_pcm(text)
+        if pcm is None:  # only ever a cached clip: a filler must be instant
+            return
+        pcm = b"".join([c async for c in speech.trimmed(_once(pcm))])
+        start = max(self._now(), self._speaking_until)
+        await self._audio(pcm)
+        self._on_timeline(text, start, self._speaking_until)  # so its echo is known as hers
+        self._last_filler, self._filler_at, self._filled = text, self._now(), True
+        log.info("call: filler %s", text)
 
     async def _reply(self) -> None:
         self._turn_spoke = False
@@ -308,14 +335,14 @@ class LiveCall:
         filler = asyncio.create_task(self._filler_later())
         spoken: list[str] = []
         hang = False
-        system = agent.system_prompt(self.settings, self.customer, self.today, self.last_call)
+        system, convo = agent.for_gemini(self.settings, self.customer, self.history, self.today, self.last_call)
         ready: asyncio.Queue = asyncio.Queue()  # (text, audio queue) in speaking order; None at the end
 
         async def write():
             """Gemini's reply, cut into segments; each segment's audio is fetched as soon as it exists."""
             nonlocal hang
             try:
-                async for seg in segments(sentences(llm.stream(system, self.history))):
+                async for seg in segments(sentences(llm.stream(system, convo))):
                     text, end = agent.split_end(seg)
                     hang |= end
                     if not text:
@@ -405,6 +432,13 @@ class LiveCall:
             return True
         return False
 
+    def _finishing_question(self) -> bool:
+        """Is she asking a question that ends within ANSWER_EARLY? (A reply then is an answer.)"""
+        if not self._timeline:
+            return False
+        last = max(self._timeline, key=lambda e: e["end"])
+        return last["text"].rstrip().endswith("?") and 0 < last["end"] - self._now() <= ANSWER_EARLY
+
     def _unheard(self, now: float) -> list[dict]:
         """What she sent but the phone hasn't played yet: [{"text", "heard"}], "heard" the part played."""
         out = []
@@ -460,13 +494,17 @@ class LiveCall:
         self.stt_events[kind] = self.stt_events.get(kind, 0) + 1
         if kind == "speech_start":
             if self._heard_at is None:
-                self._heard_at = self._now()
+                now = self._heard_at = self._now()
+                self._lead = self._speaking_until - now
                 self._over_agent = self._agent_audible()
-                if self._over_agent and not self._ending and self._now() >= self._protected_until:
+                if (self._over_agent and not self._ending and now >= self._protected_until
+                        and now - self._stretch_start >= ECHO_ONSET):  # (sooner: her own echo starting)
                     await self._duck()  # like a person hesitating when talked over
         elif kind == "transcript":
             started, self._heard_at = self._heard_at, None
-            over_agent = self._over_agent if started is not None else self._agent_audible()
+            if started is None:  # no speech_start seen: judge by now
+                self._lead, self._over_agent = self._speaking_until - self._now(), self._agent_audible()
+            over_agent = self._over_agent
             # The opening carries the "this call is recorded" notice: it is never cut short. Words
             # said over it are answered once it ends.
             over_opening = (started if started is not None else self._now()) < self._protected_until
@@ -474,15 +512,21 @@ class LiveCall:
             if not text or self._ending:
                 await self._unduck()
                 return
+            # Speech that began while she was audible (or just after) may be her own voice coming back.
+            if self._lead > -ECHO_TAIL and self._is_echo(text):
+                await self._unduck()
+                return
             if over_agent:
-                if self._is_echo(text):
-                    await self._unduck()
-                    return
                 if self._agent_audible() and is_backchannel(text):
-                    log.info("call: listening noise while she talks: %s", text)
+                    if not self._finishing_question():
+                        log.info("call: listening noise while she talks: %s", text)
+                        await self._unduck()
+                        return
+                    # "હા" to her question, said as she finishes asking it: an answer, and no need
+                    # to stop her; the reply follows the question
+                    log.info("call: answered her question as she finished it: %s", text)
                     await self._unduck()
-                    return
-                if over_opening:
+                elif over_opening:
                     log.info("call: said over the opening, answered after it: %s", text)
                 elif self.speaking() or (self._turn and not self._turn.done()):
                     await self._interrupt()
