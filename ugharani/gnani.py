@@ -205,7 +205,7 @@ def live_headers(keyterms: list[str] | None = None) -> dict[str, str]:
         "format": "transcribe",  # amounts and dates as digits
         "x-sample-rate": str(TTS_SAMPLE_RATE),
         # A phone conversation: people pause mid-sentence ("15 તારીખે... કરી દઈશ").
-        "x-min-silence-ms": os.getenv("STT_MIN_SILENCE_MS", "600"),
+        "x-min-silence-ms": os.getenv("STT_MIN_SILENCE_MS", "500"),
         "x-vad-threshold": os.getenv("STT_VAD_THRESHOLD", "0.6"),
         "x-idle-timeout-sec": "120",
         "topic": "A supplier's staff calling a dealer about a pending payment, in Gujarati and Hindi.",
