@@ -53,3 +53,19 @@ def test_notes_are_cleaned(settings, monkeypatch):
     monkeypatch.setattr(llm, "generate_json", _fake_json)
     out = asyncio.run(agent.notes(settings, CUSTOMER, [{"who": "customer", "text": "શનિવારે"}], TODAY))
     assert out["summary"] == "શનિવારે 60,000 RTGS" and out["promised_date"] is None
+
+
+def test_hindi_is_recognised_even_in_gujarati_script(settings):
+    from ugharani import agent as a
+    said = lambda text: [{"who": "agent", "text": "..."}, {"who": "customer", "text": text}]
+    # as Gnani's Gujarati recognition wrote a Hindi speaker on a real call
+    assert a.speaks_hindi(said("अभी થોડા tight ચલ રહ્યા છે, અગલે સોમવાર કો 50,000 ભેજ દૂંગા."))
+    assert a.speaks_hindi(said("બાકી કા મહીને કે આખિર તક કર દૂંગા."))
+    assert not a.speaks_hindi(said("હમણાં થોડી તંગી છે, આવતા સોમવારે 50,000 મોકલી દઈશ."))
+    assert not a.speaks_hindi(said("હા બોલો."))
+
+    customer = {"name": "રમેશભાઈ", "balance": 100000, "earliest_due": "2026-11-01"}
+    _, convo = a.for_gemini(settings, customer, said("બાકી કા મહીને કે આખિર તક કર દૂંગા."), date(2026, 11, 3))
+    assert convo[-1]["text"].endswith(a.HINDI_NOW)  # the note rides on their latest turn
+    _, convo = a.for_gemini(settings, customer, said("હા બોલો."), date(2026, 11, 3))
+    assert convo[-1]["text"] == "હા બોલો."

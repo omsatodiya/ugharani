@@ -69,9 +69,12 @@ them talk.
 - Say the customer's name only when greeting or saying goodbye, not in every reply.
 - No formal or written words: not "આપની", "કૃપા કરીને", "જણાવશો", "ઉપરોક્ત", "રકમ"; say "તમારું", \
 "કહેજો ને", "પૈસા", "પેમેન્ટ". Don't mention product names unless they ask.
-- Language: mirror the customer. Default Gujarati; if they speak Hindi, answer in simple spoken Hindi; mix \
-English trade words naturally (payment, cheque, RTGS, NEFT, UPI, bill). ALWAYS write in Gujarati script, even \
-Hindi and English words, because a Gujarati voice reads it aloud. No emojis, lists or brackets.
+- Language: mirror the customer. Default Gujarati. The customer's words reach you through Gujarati speech \
+recognition, so their Hindi is usually written in Gujarati script: "ચલ રહા હૈ", "ભેજ દૂંગા", "કર દૂંગા", \
+"અગલે સોમવાર કો", "બોલિએ", "ઠીક હૈ" are Hindi. When they speak Hindi, answer in simple spoken Hindi, e.g. \
+"જી, તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?" (still in Gujarati script). Mix English trade words naturally \
+(payment, cheque, RTGS, NEFT, UPI, bill). ALWAYS write in Gujarati script, even Hindi and English words, \
+because a Gujarati voice reads it aloud. No emojis, lists or brackets.
 - Amounts always in digits like ₹1,20,000 (never in words), digits 0-9 only (never Gujarati numerals). \
 Dates as "10 તારીખે", "5 નવેમ્બરે" or "સોમવારે".
 - Tone: {tone}
@@ -114,7 +117,52 @@ Keep the call short (about 2 minutes). Once there is an outcome, confirm it as a
 sentence ("તો 10 નવેમ્બરે ₹50,000 RTGS, બરાબર ને?") and STOP: wait for their answer. Only in your next \
 message, after they agree (or straight away after handing over to {deals_with} or {owner}, fixing a \
 callback, or an angry customer), say a short thanks and goodbye ("સારું, આભાર {customer['name']}. આવજો.") \
-and end that message with {END}. The goodbye message never contains a question."""
+and end that message with {END}. The goodbye message never contains a question. Confirm only once: \nif they already said yes to it ("હા", "ઠીક છે", "बराबर", "हाँ जी"), even while you were still asking, \ndo not ask again, say goodbye."""
+
+
+# ---------- which language the customer speaks ----------
+
+# Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
+# Gujarati and answer in Gujarati. These words tell the two apart (each is common in one only).
+HINDI_WORDS = {"હૈ", "હૈં", "હોગા", "હોગી", "જાએગા", "જાયેગા", "કો", "કા", "કી", "તક", "અભી", "અગલે", "અગલા",
+               "કબ", "ક્યા", "ક્યોં", "મૈં", "હમ", "દૂંગા", "દુંગા", "દેંગે", "દેગા", "કરુંગા", "કરૂંગા", "કરેંગે",
+               "ભેજ", "ભેજૂંગા", "ભેજુંગા", "ભેજેંગે", "રહા", "બોલિએ", "બોલિયે", "ઠીક", "લેકિન", "પર", "સાથ",
+               "હાં", "નહીં", "જી"}
+GUJARATI_WORDS = {"છે", "છું", "છો", "નથી", "તમે", "મને", "આવતા", "આવતી", "આવતે", "મોકલી", "મોકલીશ", "કરીશ",
+                  "દઈશ", "થઈ", "શું", "કેમ", "હમણાં", "હમણા", "પછી", "ક્યારે", "આપીશ", "જશે"}
+
+
+def speaks_hindi(history: list[dict]) -> bool:
+    """Does the customer speak Hindi? Judged on their last two turns, so a switch is followed."""
+    turns = [h["text"] for h in history if h["who"] == "customer"][-2:]
+    hindi = gujarati = 0
+    for word in " ".join(turns).replace("।", " ").split():
+        word = word.strip(".,?!")
+        if any("ऀ" <= ch <= "ॿ" for ch in word):  # Devanagari
+            hindi += 1
+        elif word in HINDI_WORDS - {"નહીં", "જી", "હાં"}:  # (these are said in Gujarati too)
+            hindi += 1
+        elif word in GUJARATI_WORDS:
+            gujarati += 1
+    return hindi > gujarati
+
+
+HINDI_NOW = ("[Note for you, not said by the customer: they are speaking HINDI. Reply in simple, polite "
+             "spoken Hindi (આપ, ભેજેંગે, કરેંગે), not Gujarati, still written in Gujarati script, e.g. "
+             "\"જી, ઠીક હૈ. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\"]")
+
+
+def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
+               last_call: dict | None = None) -> tuple[str, list[dict]]:
+    """The system prompt and conversation for the agent's next reply.
+
+    When the customer speaks Hindi, a note goes on their latest turn (the end of the conversation
+    weighs more than a rule deep in the prompt); the stored transcript is not changed.
+    """
+    prompt = system_prompt(settings, customer, today, last_call)
+    if history and history[-1]["who"] == "customer" and speaks_hindi(history):
+        history = [*history[:-1], {"who": "customer", "text": f"{history[-1]['text']}\n{HINDI_NOW}"}]
+    return prompt, history
 
 
 GUJARATI_DIGITS = str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")
@@ -133,7 +181,7 @@ def split_end(text: str) -> tuple[str, bool]:
 
 async def reply(settings: dict, customer: dict, history: list[dict], today: date,
                 last_call: dict | None = None) -> tuple[str, bool]:
-    text = await llm.generate(system_prompt(settings, customer, today, last_call), history)
+    text = await llm.generate(*for_gemini(settings, customer, history, today, last_call))
     return split_end(text)
 
 
