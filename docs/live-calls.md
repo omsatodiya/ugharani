@@ -88,3 +88,18 @@ script, which Gemini understands. To verify with real audio:
 with "already paid", with echo leaking), `hindi` (customer speaks Hindi).
 
 Budget for Nov 3: at most 3 real scripted calls (~20 Timbre requests, 3 short STT sessions).
+
+## What the real calls showed (Nov 3)
+
+Four scripted real calls (one more than budgeted, because the first exposed a bug):
+
+| Call | Found | Fix |
+|---|---|---|
+| interrupt, echo 0.3 | **Feedback loop**: her filler ("અચ્છા,") leaked into the mic, was heard as the customer, restarted her reply, which played another filler… she never answered. Fillers weren't on the timeline, and the echo check only ran when > 0.4 s of her audio was left. | Fillers go on the timeline; every transcript that started while she was audible (or ≤ 0.2 s after) is checked for echo; no ducking in the first 0.6 s of her talking (that's her echo starting); at most one filler per 4 s. |
+| interrupt, echo 0.3 (fixed) | Echo rejected 7 times on real Gnani transcripts (whole sentences, "જી.", "બરાબર", even "UTR" spelled in English). With echo present, Gnani merged her echo and the customer's words into one segment, so it became a normal turn after she finished, not a barge-in. | That fallback is fine; on phones with working echo cancellation the customer's own voice starts the segment. |
+| hindi | Gnani (`gu-IN`) writes Hindi phonetically in Gujarati script ("અગલે સોમવાર કો 50,000 ભેજ દૂંગા") and Gemini understands it, but **answered in Gujarati**. A real barge-in fired (`clear`, her line saved as "બરાબર. તો 9 નવેમ્બરે …"). ~1.2 s silence after "બરાબર." while Timbre started a long sentence. | `agent.speaks_hindi` detects Hindi (Devanagari, or Hindi words in Gujarati script) and a note on the customer's latest turn asks for Hindi; the first sentence after the acknowledgement is synthesised alone (Timbre starts short text faster). |
+| hindi (fixed) | She answers in Hindi: "ઠીક હૈ, તો અગલે સોમવાર કો ₹50,000 ઓર મહિને કે આખિર તક બાકી કા પેમેન્ટ, બરાબર ને?" One double confirmation. | Prompt: confirm only once; a "હા" said while she is still asking counts. Also: "હા" heard as she finishes a question is its answer, not a listening noise. |
+
+Earlier (Nov 2-3): the phone ran dry mid-word (fixed by holding 0.4 s back per segment and trimming
+Timbre's 0.3-1.1 s of padded silence); first audio is 1.3-1.6 s after the transcript, ~2.2-2.6 s
+after the customer stops talking.
