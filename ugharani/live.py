@@ -11,16 +11,19 @@ Turn-taking, as a person on the phone would do it:
 - while the agent's reply is still being written, more speech from the customer restarts it
 - a reply starts with a short acknowledgement ("જી.") from a bundled clip; a filler covers a slow one
 - audio is fetched a segment ahead and held back a moment, so speech never breaks up mid-word
-- speech heard while the agent is still talking is treated as echo and ignored (barge-in: next)
+- talked over: her voice dips at once; then her own echo and "હા"/"હં" are ignored, while real
+  words stop her mid-sentence and get an answer (see docs/live-calls.md)
 - long silence: "હેલો? સાંભળાય છે?", then a polite goodbye
 - the agent ends the call with agent.END; a hard time limit protects the credits
 """
 
 import asyncio
+import difflib
 import json
 import logging
 import random
 import re
+import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 
@@ -39,6 +42,9 @@ NO_REPLY = 8.0         # silence after the agent finishes before "hello?"
 MAX_CALL = 240.0       # then wrap up, whatever is going on
 ECHO_MARGIN = 0.4      # speech starting this close to the end of the agent's audio still counts
 AFTER_LAST_WORD = 0.6  # pause after the goodbye before the line drops
+DUCK_MAX = 2.0         # her voice dips when talked over; back up if no words follow by then
+ECHO_WINDOW = 15.0     # an overheard transcript is compared with what she said this recently
+ECHO_SIMILARITY = 0.6  # share of its letters lining up with her lines: above this it's her own echo
 
 # Fixed lines: synthesised once, then always played from the cache.
 FILLERS = ["જી,", "હા,", "અચ્છા,"]
@@ -106,6 +112,50 @@ def drop_ack(sentence: str) -> str:
     return rest if rest.strip() else sentence
 
 
+# ---------- talked over: echo, listening noises, or an interruption ----------
+
+def _words(text: str) -> list[str]:
+    """Letters, vowel signs and digits only, split into words. (Python's \\w would drop Gujarati
+    vowel signs, turning "હા" into "હ".) So "₹1,20,000" heard back as "1,20,000" still matches."""
+    kept = "".join(c if unicodedata.category(c)[0] in "LMN" else " " for c in text.lower())
+    return kept.split()
+
+
+def similarity(heard: str, said: str) -> float:
+    """Share of the heard text's letters that line up, in order and in runs of 3+, with what was said.
+
+    Her echo comes back as long runs of her own words (even when Gnani splits them differently:
+    "પોલી પ્લાસ્ટ" for "પોલીપ્લાસ્ટ"); someone else's sentence only shares scattered bits.
+    """
+    h, s = "".join(_words(heard)), "".join(_words(said))
+    if not h:
+        return 0.0
+    blocks = difflib.SequenceMatcher(None, h, s, autojunk=False).get_matching_blocks()
+    return sum(b.size for b in blocks if b.size >= 3) / len(h)
+
+
+def echoes(heard: str, said: str) -> bool:
+    """Is `heard` her own voice coming back? Up to 3 words must be her words in that order (short
+    phrases like "હા બોલો" share letters with anything); longer ones must line up with her lines."""
+    words, her = _words(heard), _words(said)
+    if not words:
+        return False
+    if len(words) <= 3:
+        return any(her[i:i + len(words)] == words for i in range(len(her) - len(words) + 1))
+    return similarity(heard, said) >= ECHO_SIMILARITY
+
+
+# Listening noises people make while the other side talks; a person doesn't stop for them.
+BACKCHANNEL = {"હા", "હાં", "હં", "હમ", "હમ્મ", "જી", "હા જી", "ઓકે", "ok", "okay", "બરાબર", "અચ્છા", "સારું",
+               "हाँ", "हां", "हा", "जी", "हम्म", "अच्छा", "ठीक", "ठीक है", "बराबर"}
+
+
+def is_backchannel(text: str) -> bool:
+    """One or two listening words ("હા", "હા હા", "હા જી"), not something to answer."""
+    words = _words(text)
+    return 0 < len(words) <= 2 and (" ".join(words) in BACKCHANNEL or all(w in BACKCHANNEL for w in words))
+
+
 class LiveCall:
     """One answered call. `send_audio` / `send_event` reach the customer's phone."""
 
@@ -131,6 +181,13 @@ class LiveCall:
         self._ending = False
         self._carry = b""
         self._fetches: set[asyncio.Task] = set()  # audio being fetched ahead of playing
+        # What the phone plays when: [{"text", "start", "end"}] per segment, for echo and interruptions.
+        self._timeline: list[dict] = []
+        self._ducked = False
+        self._protected_until = 0.0  # the opening plays until then and can't be interrupted
+        self._unduck_timer: asyncio.Task | None = None
+        self._cut_unheard: list[dict] | None = None  # set by an interruption for the reply being cut
+        self.stt_events: dict[str, int] = {}  # what Gnani sent, counted (logged at the end)
 
     # ---------- speaking ----------
 
@@ -174,21 +231,32 @@ class LiveCall:
         bursts, and a phone that has started a word must not run dry before the rest arrives."""
         need = PREBUFFER * BYTES_PER_SECOND
         held: bytearray | None = bytearray()
+        entry: dict | None = None
+
+        async def send(pcm: bytes) -> None:
+            nonlocal entry
+            if entry is None:  # this segment starts playing when the audio before it ends
+                start = max(self._now(), self._speaking_until)
+                entry = {"text": text, "start": start, "end": start}
+                self._timeline = [e for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW] + [entry]
+            await self._audio(pcm)
+            entry["end"] = self._speaking_until
+
         while (chunk := await out.get()) is not None:
             if isinstance(chunk, Exception):
                 raise chunk
             if held is not None:
                 held += chunk
                 if len(held) >= need:
-                    await self._audio(bytes(held))
+                    await send(bytes(held))
                     held = None
             else:
                 gap = self._now() - self._speaking_until
                 if gap > 0.02:
                     log.info("call: the phone ran dry for %.2fs mid-sentence", gap)
-                await self._audio(chunk)
+                await send(chunk)
         if held:
-            await self._audio(bytes(held))
+            await send(bytes(held))
         await self._send_event({"type": "line", "who": "agent", "text": text})
 
     async def say(self, text: str) -> None:
@@ -272,8 +340,8 @@ class LiveCall:
                 if not self._turn_spoke:
                     log.info("turn: first audio %.2fs after the customer", self._now() - heard_at)
                 self._turn_spoke = True
+                spoken.append(text)  # (an interruption trims what wasn't heard)
                 await self._play(text, audio)
-                spoken.append(text)
         except (llm.LLMError, gnani.GnaniError) as e:
             log.warning("call: reply failed: %s", e)
             filler.cancel()
@@ -285,6 +353,9 @@ class LiveCall:
             writer.cancel()
             if spoken:
                 self._add("agent", " ".join(spoken))
+            if self._cut_unheard is not None:  # interrupted: keep only what the customer heard
+                self._trim_agent(self._cut_unheard)
+                self._cut_unheard = None
         if hang:
             await self.hang_up("agent")
         elif self._again:
@@ -305,22 +376,118 @@ class LiveCall:
         """The agent's audio has more than ECHO_MARGIN left to play: anything heard now is likely echo."""
         return self._speaking_until - self._now() > ECHO_MARGIN
 
+    # ---------- talked over ----------
+
+    async def _duck(self) -> None:
+        if not self._ducked:
+            self._ducked = True
+            await self._send_event({"type": "duck"})
+
+        async def later():
+            await asyncio.sleep(DUCK_MAX)
+            await self._unduck()
+
+        if self._unduck_timer:
+            self._unduck_timer.cancel()
+        self._unduck_timer = asyncio.create_task(later())
+
+    async def _unduck(self) -> None:
+        if self._unduck_timer and self._unduck_timer is not asyncio.current_task():
+            self._unduck_timer.cancel()
+        if self._ducked:
+            self._ducked = False
+            await self._send_event({"type": "unduck"})
+
+    def _is_echo(self, text: str) -> bool:
+        said = " ".join(e["text"] for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW)
+        if echoes(text, said):
+            log.info("call: echo of her own voice (%.2f): %s", similarity(text, said), text)
+            return True
+        return False
+
+    def _unheard(self, now: float) -> list[dict]:
+        """What she sent but the phone hasn't played yet: [{"text", "heard"}], "heard" the part played."""
+        out = []
+        for e in self._timeline:
+            if e["end"] <= now:
+                continue
+            words = e["text"].split()
+            played = 0 if e["start"] >= now else (now - e["start"]) / (e["end"] - e["start"])
+            out.append({"text": e["text"], "heard": " ".join(words[:round(len(words) * played)])})
+        return out
+
+    def _trim_agent(self, unheard: list[dict]) -> None:
+        """Cut her last line in the history to what the customer actually heard, ending in '…'."""
+        if not unheard or not self.history or self.history[-1]["who"] != "agent":
+            return
+        line = self.history[-1]["text"]
+        for u in reversed(unheard):
+            if line.endswith(u["text"]):
+                line = line[: len(line) - len(u["text"])].rstrip()
+                if u["heard"]:
+                    line = f"{line} {u['heard']}".strip()
+        line = f"{line} …".strip() if line else ""
+        if line in ("", "…"):
+            self.history.pop()
+        else:
+            self.history[-1]["text"] = line
+
+    async def _interrupt(self) -> None:
+        """Stop talking now: the phone drops what it hasn't played, the reply being said is cancelled."""
+        now = self._now()
+        unheard = self._unheard(now)
+        log.info("call: interrupted; not heard: %s", " | ".join(u["text"][:30] for u in unheard))
+        await self._send_event({"type": "clear"})
+        self._ducked = False
+        if self._unduck_timer:
+            self._unduck_timer.cancel()
+        self._speaking_until = now
+        for e in self._timeline:
+            e["end"] = min(e["end"], now)
+        if self._turn and not self._turn.done():
+            self._cut_unheard = unheard  # the reply trims its own line as it stops
+            self._turn.cancel()
+            try:
+                await self._turn
+            except asyncio.CancelledError:
+                pass
+        else:
+            self._trim_agent(unheard)  # a fixed line (the opening, "hello?")
+
     async def heard(self, event: dict) -> None:
         """A message from the live STT session."""
         kind = event.get("type")
+        self.stt_events[kind] = self.stt_events.get(kind, 0) + 1
         if kind == "speech_start":
             if self._heard_at is None:
                 self._heard_at = self._now()
                 self._over_agent = self._agent_audible()
+                if self._over_agent and not self._ending and self._now() >= self._protected_until:
+                    await self._duck()  # like a person hesitating when talked over
         elif kind == "transcript":
-            seen_start, self._heard_at = self._heard_at is not None, None
-            over_agent = self._over_agent if seen_start else self._agent_audible()
+            started, self._heard_at = self._heard_at, None
+            over_agent = self._over_agent if started is not None else self._agent_audible()
+            # The opening carries the "this call is recorded" notice: it is never cut short. Words
+            # said over it are answered once it ends.
+            over_opening = (started if started is not None else self._now()) < self._protected_until
             text = (event.get("text") or "").strip()
             if not text or self._ending:
+                await self._unduck()
                 return
             if over_agent:
-                log.info("call: ignored while agent speaking: %s", text)
-                return
+                if self._is_echo(text):
+                    await self._unduck()
+                    return
+                if self._agent_audible() and is_backchannel(text):
+                    log.info("call: listening noise while she talks: %s", text)
+                    await self._unduck()
+                    return
+                if over_opening:
+                    log.info("call: said over the opening, answered after it: %s", text)
+                elif self.speaking() or (self._turn and not self._turn.done()):
+                    await self._interrupt()
+                else:
+                    await self._unduck()
             self._last_heard = self._now()
             self._prompted = False
             self._add("customer", text)
@@ -342,6 +509,7 @@ class LiveCall:
             await asyncio.sleep(0.05)
         line = agent.opening(self.settings, self.customer)
         await self.say(line)
+        self._protected_until = self._speaking_until  # (all of it is sent: cached, instant)
         self._add("agent", line)
         self._last_heard = self._now()
 
@@ -374,6 +542,9 @@ class LiveCall:
         try:
             await self.done.wait()
         finally:
+            log.info("call: speech events from Gnani: %s", self.stt_events)
+            if self._unduck_timer:
+                self._unduck_timer.cancel()
             for t in [*tasks, self._turn]:
                 if t and not t.done():
                     t.cancel()

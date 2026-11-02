@@ -180,7 +180,24 @@ function phoneLine() {
   const quiet = audio.createGain(); quiet.gain.value = 0.006;
   noise.connect(quiet).connect(hp);
   noise.start();
-  return { input: hp, volume, noise };
+
+  // Her voice goes through its own gain, so it can dip when the customer talks over her.
+  const voice = audio.createGain();
+  voice.connect(hp);
+  return { input: voice, voice, volume, noise };
+}
+
+function duck(on) {
+  // A quick, smooth dip (no click): like someone hesitating when talked over.
+  live.line.voice.gain.setTargetAtTime(on ? 0.25 : 1.0, audio.currentTime, 0.03);
+}
+
+function clearPlayback() {
+  // The customer interrupted: drop everything she hasn't said yet.
+  for (const s of live.sources) { try { s.stop(); } catch {} }
+  live.sources.clear();
+  live.playAt = audio.currentTime;
+  duck(false);
 }
 
 function play(buf) {
@@ -221,7 +238,10 @@ async function startLive(id) {
     if (typeof e.data !== "string") return play(e.data);
     const msg = JSON.parse(e.data);
     if (msg.type === "line") console.log(`[call] ${msg.who}: ${msg.text}`);
-    if (msg.type === "end") hangup("completed", { byAgent: true });
+    else if (msg.type === "duck") duck(true);
+    else if (msg.type === "unduck") duck(false);
+    else if (msg.type === "clear") clearPlayback();
+    else if (msg.type === "end") hangup("completed", { byAgent: true });
   };
   ws.onclose = (e) => {
     if (live?.ws !== ws) return; // we hung up ourselves

@@ -18,7 +18,8 @@ OPENING = "નમસ્તે, રમેશભાઈ બોલો છો? હુ
 
 
 class FakeSTT:
-    """Audio frames starting with b'SAY:' become a speech_start + transcript, as if spoken."""
+    """Frames starting with b'SAY:' become a speech_start + transcript, as if spoken; b'START' only
+    the speech_start (VAD heard voice), b'TEXT:' only the transcript that ends it."""
 
     def __init__(self):
         self.queue = asyncio.Queue()
@@ -28,6 +29,10 @@ class FakeSTT:
         if pcm.startswith(b"SAY:"):
             await self.queue.put({"type": "speech_start"})
             await self.queue.put({"type": "transcript", "text": pcm[4:].decode()})
+        elif pcm.startswith(b"START"):
+            await self.queue.put({"type": "speech_start"})
+        elif pcm.startswith(b"TEXT:"):
+            await self.queue.put({"type": "transcript", "text": pcm[5:].decode()})
         else:
             self.audio += pcm
 
@@ -450,3 +455,126 @@ def test_timbre_silence_is_trimmed_but_pauses_inside_are_kept():
     out = asyncio.run(collect())
     lead, inner, tail = speech.LEAD_KEEP, 640 * 10, speech.TAIL_KEEP
     assert len(out) == lead + len(word) + inner + len(word) + tail  # the click after the silence is gone
+
+
+# ---------- talked over ----------
+
+LONG_LINE = "₹1,00,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?"
+
+
+def _long_reply(rec, seconds=3.0):
+    """The agent's first reply: 'જી.' then a line that plays for `seconds` on the phone."""
+    rec["speech_seconds"][LONG_LINE] = seconds
+    rec["replies"].insert(0, f"જી. {LONG_LINE}")
+
+
+def _start_long_reply(ws):
+    until(ws, {"who": "agent"})  # the opening
+    time.sleep(0.6)  # (finished playing)
+    say(ws, "હા બોલો")
+    until(ws, {"text": LONG_LINE})  # all its audio is sent; the phone plays it for the next few seconds
+
+
+def test_talking_over_her_stops_her_and_gets_an_answer(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["અચ્છા. તો UTR નંબર મોકલી દેશો? <END>"]
+    _long_reply(rec)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        time.sleep(1.0)  # about a third of her line has played
+        ws.send_bytes(b"START")
+        until(ws, {"type": "duck"})  # her voice dips at once
+        ws.send_bytes("TEXT:મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે".encode())
+        events, _ = until(ws, {"type": "clear"})  # the phone drops the rest of her line
+        events, _ = until(ws, {"type": "end"})
+        assert ("customer", "મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે") in lines(events)
+        assert ("agent", "અચ્છા.") in lines(events)
+
+    # Gemini was told she got cut off, and what the customer actually heard
+    agent_line = rec["histories"][1][-2]
+    assert agent_line["who"] == "agent" and agent_line["text"].startswith("જી. ₹1,00,000")
+    assert agent_line["text"].endswith("…") and "મોકલશો?" not in agent_line["text"]
+    assert rec["histories"][1][-1] == {"who": "customer", "text": "મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"}
+    transcript = client.get(f"/calls/{call_id}").json()["transcript"]
+    assert transcript[2]["text"].endswith("…") and transcript[3]["who"] == "customer"
+
+
+def test_her_own_echo_does_not_stop_her(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["સારું, આભાર. આવજો. <END>"]
+    _long_reply(rec, seconds=1.5)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        ws.send_bytes(b"START")
+        until(ws, {"type": "duck"})
+        ws.send_bytes("TEXT:1,00,000 નું પેમેન્ટ બાકી છે એ ક્યારે મોકલશો".encode())  # her words, heard back
+        events, _ = until(ws, {"type": "unduck"})
+        assert all(e["type"] != "clear" for e in events)
+        time.sleep(1.6)
+        say(ws, "10 તારીખે")
+        until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 2  # the echo got no reply
+    assert rec["histories"][1][-2]["text"] == f"જી. {LONG_LINE}"  # her line, whole
+
+
+def test_listening_noises_do_not_stop_her(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["સારું. આવજો. <END>"]
+    _long_reply(rec, seconds=1.5)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        say(ws, "હા હા")
+        events, _ = until(ws, {"type": "unduck"})
+        assert all(e["type"] != "clear" for e in events)
+        time.sleep(1.6)
+        say(ws, "હા, 10 તારીખે")
+        until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 2
+
+
+def test_her_voice_comes_back_if_no_words_follow(phone, monkeypatch):
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "DUCK_MAX", 0.2)
+    _long_reply(rec)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        ws.send_bytes(b"START")  # a cough, a door: VAD fires, no words come
+        until(ws, {"type": "duck"})
+        until(ws, {"type": "unduck"})
+        ws.send_text(json.dumps({"type": "hangup"}))
+
+
+def test_similarity_and_listening_words():
+    said = "જી. ₹1,20,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?"
+    assert live.similarity("1,20,000 નું પેમેન્ટ બાકી છે", said) > 0.9
+    assert live.similarity("મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું", said) < 0.5
+    assert live.similarity("", said) == 0.0
+    for noise in ["હા", "હા હા", "હા જી.", "हाँ", "ઓકે", "હં"]:
+        assert live.is_backchannel(noise), noise
+    for words in ["હા, 10 તારીખે", "ના", "હા બોલો શું કામ છે", ""]:
+        assert not live.is_backchannel(words), words
+
+
+def test_short_phrases_are_echo_only_if_she_said_them_in_that_order():
+    opening = OPENING
+    assert not live.echoes("હા બોલો", opening)  # shares letters with "...બોલો છો?", but isn't hers
+    assert live.echoes("બોલો છો", opening)
+    assert live.echoes("જીનિયસ પોલીપ્લાસ્ટ ગોંડલથી બોલું છું", opening)
+    assert not live.echoes("હા, બોલો ને શું કામ છે", opening)
+
+
+def test_the_opening_is_never_cut_short(phone):
+    """It carries the "this call is recorded" notice; words said over it are answered after it."""
+    client, call_id, rec = phone
+    speech._save(speech.clip_key(OPENING), LOUD * 16000)  # the opening plays for a second
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        ws.send_bytes(b"START")
+        ws.send_bytes("TEXT:હા બોલો, શું કામ છે".encode())
+        events, _ = until(ws, {"type": "end"})
+    kinds = [e["type"] for e in events]
+    assert "clear" not in kinds and "duck" not in kinds
+    assert ("customer", "હા બોલો, શું કામ છે") in lines(events)
+    transcript = client.get(f"/calls/{call_id}").json()["transcript"]
+    assert transcript[0] == {"who": "agent", "text": OPENING}  # whole
