@@ -1,12 +1,15 @@
 """Thin Gemini client: the call agent's brain. Docs: https://ai.google.dev/api/generate-content"""
 
+import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 
 import httpx
 
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+log = logging.getLogger("uvicorn.error")
 
 
 class LLMError(Exception):
@@ -70,43 +73,89 @@ async def generate_json(system: str, history: list[dict], schema: dict) -> dict:
         raise LLMError(f"not JSON: {text[:200]}") from None
 
 
-# On a call, a reply that hasn't started within this long is abandoned and asked again: flash-lite
-# usually starts in ~1 s but now and then stalls for 10 s+, and a retry is faster than waiting it out.
-FIRST_CHUNK_TIMEOUT = 4.0
+# Measured on the free tier: either model is sometimes overloaded (no first chunk for 15 s, or 503)
+# while the other answers in ~1.5 s, and which one changes from day to day. So a call asks the first
+# model, and if it hasn't started within HEDGE_AFTER, asks the other one too; the first to answer is
+# used and the other is cancelled. Extra quota is spent only when the first model is slow.
+HEDGE_AFTER = 1.5
+_last_winner: str | None = None
+FIRST_CHUNK_TIMEOUT = 6.0  # a model that hasn't started by then has failed
+
+
+async def _attempt(name: str, body: dict, out: asyncio.Queue) -> None:
+    """Stream one model's reply into `out` as (name, "chunk" | "done" | "error", payload)."""
+    started = False
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=FIRST_CHUNK_TIMEOUT)) as client:
+            async with client.stream("POST", f"{BASE}/{name}:streamGenerateContent",
+                                     params={"key": _key(), "alt": "sse"}, json=body) as resp:
+                if resp.status_code != 200:
+                    detail = (await resp.aread()).decode(errors="replace")[:200]
+                    await out.put((name, "error", LLMError(f"{name}: HTTP {resp.status_code} {detail}")))
+                    return
+                async for line in resp.aiter_lines():
+                    if line.startswith("data:") and (chunk := _text(json.loads(line[5:]))):
+                        started = True
+                        await out.put((name, "chunk", chunk))
+        await out.put((name, "done", None) if started else (name, "error", LLMError(f"{name}: empty reply")))
+    except httpx.TimeoutException:
+        what = "stalled mid-reply" if started else f"no reply in {FIRST_CHUNK_TIMEOUT:.0f}s"
+        await out.put((name, "error", LLMError(f"{name}: {what}")))
+    except httpx.TransportError as e:
+        await out.put((name, "error", LLMError(f"{name}: {type(e).__name__}")))
 
 
 async def stream(system: str, history: list[dict], max_tokens: int = 400) -> AsyncIterator[str]:
     """Yield the reply as it is generated, so speech can start on the first sentence.
 
-    Tries flash-lite twice (each with a short wait for the first chunk), then the fallback model.
+    Hedged: the second model is asked too if the first hasn't started within HEDGE_AFTER, or failed.
     """
+    global _last_winner
     body = _body(system, history, None, max_tokens)
-    attempts = [(model(), FIRST_CHUNK_TIMEOUT), (model(), FIRST_CHUNK_TIMEOUT), (fallback_model(), 20.0)]
-    last = "no attempt"
-    for name, wait in attempts:
-        timeout = httpx.Timeout(30.0, read=wait)  # read: also the wait for the first bytes
-        started = False
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream("POST", f"{BASE}/{name}:streamGenerateContent",
-                                         params={"key": _key(), "alt": "sse"}, json=body) as resp:
-                    if resp.status_code == 429 or resp.status_code >= 500:
-                        last = f"HTTP {resp.status_code}"
-                        continue  # rate limited or overloaded: try again / the fallback
-                    if resp.status_code != 200:
-                        raise LLMError(f"HTTP {resp.status_code}: {(await resp.aread()).decode(errors='replace')[:300]}")
-                    async for line in resp.aiter_lines():
-                        if line.startswith("data:"):
-                            if chunk := _text(json.loads(line[5:])):
-                                started = True
-                                yield chunk
-                    if started:
-                        return
-                    last = "empty reply"
-        except httpx.TimeoutException:
-            if started:  # half a reply was already spoken: don't start it again
-                raise LLMError(f"{name} stalled mid-reply") from None
-            last = f"{name}: no reply in {wait:.0f}s"
-        except httpx.TransportError as e:
-            last = f"{name}: {type(e).__name__}"
-    raise LLMError(f"no reply after {len(attempts)} tries ({last})")
+    names = [model(), fallback_model()]
+    if _last_winner == names[1]:  # the model that answered last time goes first
+        names.reverse()
+    out: asyncio.Queue = asyncio.Queue()
+    tasks: dict[str, asyncio.Task] = {}
+    loop = asyncio.get_running_loop()
+
+    def ask(name: str) -> None:
+        tasks[name] = asyncio.create_task(_attempt(name, body, out))
+
+    ask(names[0])
+    hedge_at = loop.time() + HEDGE_AFTER
+    winner: str | None = None
+    failed: dict[str, Exception] = {}
+    try:
+        while True:
+            waiting = winner is None and len(tasks) < len(names)
+            try:
+                name, kind, payload = await asyncio.wait_for(
+                    out.get(), timeout=max(0.0, hedge_at - loop.time()) if waiting else None)
+            except TimeoutError:
+                log.warning("gemini: %s slow to start, asking %s too", names[0], names[1])
+                ask(names[1])
+                continue
+            if winner is not None and name != winner:
+                continue  # the other model's leftovers
+            if kind == "chunk":
+                if winner is None:
+                    winner = _last_winner = name
+                    for other, task in tasks.items():
+                        if other != name:
+                            task.cancel()
+                yield payload
+            elif kind == "done":
+                return
+            else:  # error
+                if name == winner:
+                    raise payload  # (half the reply is already said: don't start it again)
+                log.warning("gemini: %s", payload)
+                failed[name] = payload
+                if len(tasks) < len(names):
+                    ask(names[len(tasks)])  # no point waiting for HEDGE_AFTER
+                elif len(failed) == len(names):
+                    raise LLMError("no reply: " + "; ".join(str(e) for e in failed.values()))
+    finally:
+        for task in tasks.values():
+            task.cancel()

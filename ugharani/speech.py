@@ -10,13 +10,14 @@ from datetime import date
 from pathlib import Path
 
 from ugharani import gnani
-from ugharani.config import audio_cache_dir, tts_model, tts_voice
+from ugharani.config import audio_cache_dir, tts_model, tts_speed, tts_voice
 from ugharani.extract import ParsedEntry
 
 
 def clip_key(text: str) -> str:
-    """Stable key for a sentence in the current voice; also its file name."""
-    return hashlib.sha256(f"{tts_model()}/{tts_voice()}\n{text}".encode()).hexdigest()[:16]
+    """Stable key for a sentence in the current voice and speed; also its file name."""
+    voice = tts_voice() if tts_speed() == 1.0 else f"{tts_voice()}@{tts_speed()}"  # (old keys stay valid)
+    return hashlib.sha256(f"{tts_model()}/{voice}\n{text}".encode()).hexdigest()[:16]
 
 
 # Clips shipped with the app (fixed sentences), so a fresh server's empty cache doesn't re-pay for them.
@@ -75,6 +76,9 @@ VOICED_RMS = 400      # about -38 dBFS: quieter than this is silence or line noi
 VOICED_RUN = 3        # 60 ms of sound in a row is speech; a lone click isn't
 LEAD_KEEP = 4 * WINDOW   # 80 ms before the first word
 TAIL_KEEP = 8 * WINDOW   # 160 ms after the last word: a natural end, not a gap
+# Timbre pauses ~0.55-0.6 s at every comma and full stop, in every voice: reads like a script.
+# People chatting on the phone pause ~0.2-0.3 s between short sentences.
+MAX_PAUSE = 14 * WINDOW  # 280 ms
 
 
 def _voiced(window: bytes) -> bool:
@@ -82,9 +86,9 @@ def _voiced(window: bytes) -> bool:
     return (sum(s * s for s in samples) / len(samples)) ** 0.5 > VOICED_RMS
 
 
-async def trimmed(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+async def trimmed(chunks: AsyncIterator[bytes], max_pause: int | None = MAX_PAUSE) -> AsyncIterator[bytes]:
     """Drop Timbre's silence before the first word and after the last (up to ~1 s, sometimes with a
-    click), which otherwise sounds like a pause between every sentence. Pauses inside are kept."""
+    click), and shorten pauses inside to `max_pause` bytes: both sound like reading, not talking."""
     buf = bytearray()      # bytes not yet cut into windows
     pending = bytearray()  # windows since the last confirmed speech: a pause, or the trailing silence
     run, started = 0, False
@@ -98,6 +102,11 @@ async def trimmed(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
                 if not started:  # keep only a breath before the first word
                     started = True
                     pending = pending[-(VOICED_RUN * WINDOW + LEAD_KEEP):]
+                elif max_pause is not None:  # a pause between words: no longer than max_pause
+                    pause = len(pending) - VOICED_RUN * WINDOW  # (the last windows are the new word)
+                    if pause > max_pause:
+                        keep_end = max_pause // 2 // WINDOW * WINDOW  # end of the last word, then
+                        del pending[keep_end:keep_end + pause - max_pause]  # the run-up to the next
                 yield bytes(pending)
                 pending = bytearray()
             elif not started and len(pending) > LEAD_KEEP + VOICED_RUN * WINDOW:

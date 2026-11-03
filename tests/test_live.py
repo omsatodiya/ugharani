@@ -14,7 +14,9 @@ from starlette.websockets import WebSocketDisconnect
 from ugharani import gnani, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
-OPENING = "નમસ્તે, રમેશભાઈ બોલો છો? હું કાવ્યા, જીનિયસ પોલીપ્લાસ્ટ, ગોંડલથી બોલું છું. આ કૉલ રેકોર્ડ થાય છે."
+GREETING = "હેલો રમેશભાઈ?"
+INTRO = "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં."
+INTRO_NO = "નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં."  # after "કોણ?" etc.
 
 
 class FakeSTT:
@@ -57,7 +59,7 @@ def phone(tmp_path, monkeypatch):
 
     async def stream(system, history, max_tokens=400):
         rec["histories"].append([dict(h) for h in history])
-        reply = rec["replies"].pop(0)
+        reply = rec["replies"].pop(0) if rec["replies"] else "સારું. આવજો. <END>"
         if isinstance(reply, tuple):  # (delay, text): a slow Gemini
             await asyncio.sleep(reply[0])
             reply = reply[1]
@@ -74,8 +76,8 @@ def phone(tmp_path, monkeypatch):
     monkeypatch.setattr(gnani, "synthesize", synthesize)
     monkeypatch.setattr(gnani, "live_stt", live_stt)
     monkeypatch.setattr(llm, "stream", stream)
-    for name, value in {"GREETING_WAIT": 0.05, "FILLER_AFTER": 5, "NO_REPLY": 5, "AFTER_LAST_WORD": 0,
-                        "ECHO_MARGIN": 0.5}.items():
+    for name, value in {"GREETING_WAIT": 0.05, "GREETING_REPLY": 0.3, "FILLER_AFTER": 5, "NO_REPLY": 5, "AFTER_LAST_WORD": 0,
+                        "ECHO_MARGIN": 0.5, "ECHO_DELAY": 0.05}.items():  # (fake audio is 0.1 s)
         monkeypatch.setattr(live, name, value)
 
     client = TestClient(main.app)
@@ -120,15 +122,19 @@ def test_a_whole_call_from_hello_to_goodbye(phone):
     ]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         events, audio = until(ws, {"who": "agent"})
-        assert lines(events) == [("agent", OPENING)] and audio > 0
+        assert lines(events) == [("agent", GREETING)] and audio > 0  # then she waits
+        assert rec["histories"] == []
 
         say(ws, "હા બોલો")
         events, _ = until(ws, {"text": "પેમેન્ટ ક્યારે આવશે?"})
-        # the acknowledgement alone (a bundled clip), then the rest of the reply in one piece
-        assert lines(events) == [("customer", "હા બોલો"), ("agent", "જી."),
+        # who she is (a bundled clip), then the reason Gemini wrote meanwhile; its "જી." is dropped
+        assert lines(events) == [("customer", "હા બોલો"), ("agent", INTRO),
                                  ("agent", "₹1,00,000 બાકી છે."), ("agent", "પેમેન્ટ ક્યારે આવશે?")]
+        time.sleep(0.7)  # (listens until she has finished)
         say(ws, "10 તારીખે RTGS કરી દઈશ")
-        until(ws, {"text": "તો 10 નવેમ્બરે RTGS, બરાબર ને?"})
+        events, _ = until(ws, {"text": "તો 10 નવેમ્બરે RTGS, બરાબર ને?"})
+        assert ("agent", "સારું.") in lines(events)  # (later replies keep their acknowledgement)
+        time.sleep(0.7)
         say(ws, "હા")
         events, _ = until(ws, {"type": "end"})
         assert lines(events)[-2:] == [("agent", "સારું, આભાર રમેશભાઈ."), ("agent", "આવજો.")]
@@ -136,7 +142,7 @@ def test_a_whole_call_from_hello_to_goodbye(phone):
     call = client.get(f"/calls/{call_id}").json()
     assert call["status"] == "completed" and call["ended_at"]
     assert [t["who"] for t in call["transcript"]] == ["agent", "customer"] * 3 + ["agent"]
-    assert call["transcript"][2]["text"] == "જી. ₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?"
+    assert call["transcript"][2]["text"] == f"{INTRO} ₹1,00,000 બાકી છે. પેમેન્ટ ક્યારે આવશે?"
     assert call["transcript"][-1]["text"] == "સારું, આભાર રમેશભાઈ. આવજો."
     # Gemini saw the whole conversation so far each time
     assert rec["histories"][1][-1] == {"who": "customer", "text": "10 તારીખે RTGS કરી દઈશ"}
@@ -145,30 +151,49 @@ def test_a_whole_call_from_hello_to_goodbye(phone):
 
 def test_the_opening_was_made_while_ringing(phone):
     _, _, rec = phone
-    assert rec["tts"][0] == OPENING and set(live.FIXED_LINES) <= set(rec["tts"])  # warm-up on POST /calls
+    assert rec["tts"][:3] == [GREETING, INTRO, INTRO_NO]  # warm-up on POST /calls
+    assert set(live.FIXED_LINES) <= set(rec["tts"])
 
 
-def test_customer_hello_is_answered_by_the_opening(phone, monkeypatch):
+def test_customer_hello_is_answered_by_the_greeting(phone, monkeypatch):
     client, call_id, rec = phone
     monkeypatch.setattr(live, "GREETING_WAIT", 1.0)
     rec["replies"] = ["આભાર. આવજો. <END>"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         say(ws, "હેલો")
         events, _ = until(ws, {"who": "agent"})
-        assert lines(events) == [("customer", "હેલો"), ("agent", OPENING)]
+        assert lines(events) == [("customer", "હેલો"), ("agent", GREETING)]
         assert rec["histories"] == []  # the hello itself needs no Gemini reply
         say(ws, "હા, બોલો")
-        until(ws, {"type": "end"})
+        events, _ = until(ws, {"type": "end"})
+        assert ("agent", INTRO) in lines(events)
     assert [t["who"] for t in client.get(f"/calls/{call_id}").json()["transcript"]] == ["customer", "agent"] * 2
+
+
+def test_who_is_it_gets_an_intro_without_ha(phone):
+    client, call_id, rec = phone
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "કોણ બોલો?")
+        events, _ = until(ws, {"type": "end"})
+    assert ("agent", INTRO_NO) in lines(events)
+
+
+def test_no_answer_to_the_greeting_gets_one_hello_then_the_intro(phone):
+    client, call_id, rec = phone
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        events, _ = until(ws, {"type": "end"})
+    said = [t for who, t in lines(events) if who == "agent"]
+    assert said[:3] == [GREETING, live.HELLO_SHORT, INTRO_NO]
 
 
 def test_speech_over_the_agent_is_treated_as_echo(phone):
     client, call_id, rec = phone
-    speech._save(speech.clip_key(OPENING), LOUD * 16000)  # the opening plays for a second
+    speech._save(speech.clip_key(GREETING), LOUD * 16000)  # the greeting plays for a second
     rec["replies"] = ["આવજો. <END>"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
-        say(ws, "નમસ્તે રમેશભાઈ બોલો છો")  # the phone's speaker, picked up by its own mic
+        say(ws, "હેલો રમેશભાઈ")  # the phone's speaker, picked up by its own mic
         say(ws, "")  # (nothing heard: ignored)
         time.sleep(1.1)
         say(ws, "હા બોલો")
@@ -182,26 +207,31 @@ def test_customer_hangs_up(phone):
         until(ws, {"who": "agent"})
         ws.send_text(json.dumps({"type": "hangup"}))
     call = client.get(f"/calls/{call_id}").json()
-    assert call["status"] == "completed" and call["transcript"] == [{"who": "agent", "text": OPENING}]
+    assert call["status"] == "completed" and call["transcript"] == [{"who": "agent", "text": GREETING}]
     assert client.post(f"/calls/{call_id}/status", json={"status": "completed"}).status_code == 409
 
 
 def test_silence_gets_a_hello_then_a_goodbye(phone, monkeypatch):
-    client, call_id, _ = phone
+    client, call_id, rec = phone
     monkeypatch.setattr(live, "NO_REPLY", 0.2)
+    rec["replies"] = ["₹1,00,000 બાકી છે, ક્યારે મોકલશો?"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         events, _ = until(ws, {"type": "end"})
-    assert [t for _, t in lines(events)] == [OPENING, live.HELLO, live.NO_ANSWER_BYE]
+    said = [t for _, t in lines(events)]
+    assert said[:3] == [GREETING, live.HELLO_SHORT, INTRO_NO]
+    assert said[-2:] == [live.HELLO, live.NO_ANSWER_BYE]
     assert client.get(f"/calls/{call_id}").json()["status"] == "completed"
 
 
 def test_slow_reply_gets_a_filler_without_a_double_ack(phone, monkeypatch):
     client, call_id, rec = phone
     monkeypatch.setattr(live, "FILLER_AFTER", 0.05)
-    rec["replies"] = [(0.4, "જી. 10 તારીખે બરાબર. આવજો. <END>")]
+    rec["replies"] = ["₹1,00,000 બાકી છે.", (0.4, "જી. 10 તારીખે બરાબર. આવજો. <END>")]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
-        time.sleep(0.2)  # the opening has finished playing: a filler only plays into silence
+        say(ws, "હા બોલો")  # (the intro covers Gemini's first reply: no filler there)
+        until(ws, {"text": "₹1,00,000 બાકી છે."})
+        time.sleep(0.6)  # she has finished: a filler only plays into silence
         say(ws, "10 તારીખે આપી દઈશ")
         events, audio = until(ws, {"type": "end"})
     said = [t for who, t in lines(events) if who == "agent"]
@@ -210,14 +240,27 @@ def test_slow_reply_gets_a_filler_without_a_double_ack(phone, monkeypatch):
 
 def test_more_speech_before_the_reply_restarts_it(phone):
     client, call_id, rec = phone
-    rec["replies"] = [(0.5, "ખોટો જવાબ."), "આવજો. <END>"]
+    rec["replies"] = ["₹1,00,000 બાકી છે.", (0.5, "ખોટો જવાબ."), "આવજો. <END>"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે."})
+        time.sleep(0.6)
         say(ws, "હા")
-        say(ws, "15 તારીખે")
+        say(ws, "15 તારીખે")  # ...a breath later, before she answered the "હા"
         events, _ = until(ws, {"type": "end"})
     assert ("agent", "ખોટો જવાબ.") not in lines(events)
     assert rec["histories"][-1][-1] == {"who": "customer", "text": "હા 15 તારીખે"}
+
+
+def test_both_answers_to_the_greeting_are_heard(phone):
+    client, call_id, rec = phone
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા")
+        say(ws, "બોલો શું કામ છે")
+        until(ws, {"type": "end"})
+    assert rec["histories"][0][-1] == {"who": "customer", "text": "હા બોલો શું કામ છે"}
 
 
 def test_gemini_failure_is_covered_by_a_sorry(phone, monkeypatch):
@@ -231,7 +274,10 @@ def test_gemini_failure_is_covered_by_a_sorry(phone, monkeypatch):
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
         say(ws, "હા બોલો")
-        until(ws, {"text": live.SORRY})
+        until(ws, {"text": "તમારું ₹1,00,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?"})  # after the intro
+        time.sleep(0.6)
+        say(ws, "10 તારીખે")
+        until(ws, {"text": live.SORRY})  # later turns: sorry, say again
         ws.send_text(json.dumps({"type": "hangup"}))
 
 
@@ -293,6 +339,7 @@ def test_a_segment_starts_only_with_enough_audio_held_back(phone):
         until(ws, {"who": "agent"})
         gnani.synthesize_stream = trickle  # (restored by monkeypatch after the test)
         say(ws, "હા બોલો")
+        until(ws, {"text": INTRO})  # (a cached clip: sent whole)
         while True:
             msg = ws.receive()
             if msg.get("bytes") is not None:
@@ -376,9 +423,28 @@ def test_rate_limited_gemini_falls_back_then_gives_up(monkeypatch):
         return llm.httpx.Response(429, text="quota")
 
     _gemini(monkeypatch, handler)
-    with pytest.raises(llm.LLMError, match="no reply after 3 tries"):
+    with pytest.raises(llm.LLMError, match="no reply: .*429.*429"):
         _collect(llm.stream("sys", []))
-    assert tried == [llm.model(), llm.model(), llm.fallback_model()]
+    assert tried == [llm.model(), llm.fallback_model()]  # the second is asked at once, not after a wait
+
+
+def test_a_slow_model_is_overtaken_by_the_other(monkeypatch):
+    """Hedging: the first model hasn't started after HEDGE_AFTER, so the other is asked too."""
+    monkeypatch.setattr(llm, "HEDGE_AFTER", 0.1)
+    tried = []
+
+    async def handler(request):
+        name = request.url.path.split("/")[-1].split(":")[0]
+        tried.append(name)
+        if name == llm.model():
+            await asyncio.sleep(1.0)  # overloaded
+            return llm.httpx.Response(200, text=SSE % "મોડું.")
+        return llm.httpx.Response(200, text=SSE % "જી.")
+
+    _gemini(monkeypatch, handler)
+    t = time.monotonic()
+    assert _collect(llm.stream("sys", [])) == ["જી."]
+    assert tried == [llm.model(), llm.fallback_model()] and time.monotonic() - t < 0.8
 
 
 class FakeGnaniWS:
@@ -493,7 +559,7 @@ def test_talking_over_her_stops_her_and_gets_an_answer(phone):
 
     # Gemini was told she got cut off, and what the customer actually heard
     agent_line = rec["histories"][1][-2]
-    assert agent_line["who"] == "agent" and agent_line["text"].startswith("જી. ₹1,00,000")
+    assert agent_line["who"] == "agent" and agent_line["text"].startswith(f"{INTRO} ₹1,00,000")
     assert agent_line["text"].endswith("…") and "મોકલશો?" not in agent_line["text"]
     assert rec["histories"][1][-1] == {"who": "customer", "text": "મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"}
     transcript = client.get(f"/calls/{call_id}").json()["transcript"]
@@ -515,7 +581,7 @@ def test_her_own_echo_does_not_stop_her(phone):
         say(ws, "10 તારીખે")
         until(ws, {"type": "end"})
     assert len(rec["histories"]) == 2  # the echo got no reply
-    assert rec["histories"][1][-2]["text"] == f"જી. {LONG_LINE}"  # her line, whole
+    assert rec["histories"][1][-2]["text"] == f"{INTRO} {LONG_LINE}"  # her line, whole
 
 
 def test_listening_noises_do_not_stop_her(phone):
@@ -557,20 +623,23 @@ def test_similarity_and_listening_words():
 
 
 def test_short_phrases_are_echo_only_if_she_said_them_in_that_order():
-    opening = OPENING
-    assert not live.echoes("હા બોલો", opening)  # shares letters with "...બોલો છો?", but isn't hers
-    assert live.echoes("બોલો છો", opening)
-    assert live.echoes("જીનિયસ પોલીપ્લાસ્ટ ગોંડલથી બોલું છું", opening)
-    assert not live.echoes("હા, બોલો ને શું કામ છે", opening)
+    said = "નમસ્તે, રમેશભાઈ બોલો છો? હું કાવ્યા, જીનિયસ પોલીપ્લાસ્ટ, ગોંડલથી બોલું છું."
+    assert not live.echoes("હા બોલો", said)  # shares letters with "...બોલો છો?", but isn't hers
+    assert live.echoes("બોલો છો", said)
+    assert live.echoes("જીનિયસ પોલીપ્લાસ્ટ ગોંડલથી બોલું છું", said)
+    assert not live.echoes("હા, બોલો ને શું કામ છે", said)
 
 
-def test_the_opening_is_never_cut_short(phone):
+def test_the_intro_is_never_cut_short(phone):
     """It carries the "this call is recorded" notice; words said over it are answered after it."""
     client, call_id, rec = phone
-    speech._save(speech.clip_key(OPENING), LOUD * 16000)  # the opening plays for a second
-    rec["replies"] = ["જી. ₹1,00,000 બાકી છે. આવજો. <END>"]
+    speech._save(speech.clip_key(INTRO), LOUD * 32000)  # the intro plays for two seconds
+    rec["replies"] = ["₹1,00,000 બાકી છે.", "સારું. આવજો. <END>"]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
+        say(ws, "હા")
+        until(ws, {"text": INTRO})
+        time.sleep(live.ECHO_ONSET + 0.1)
         ws.send_bytes(b"START")
         ws.send_bytes("TEXT:હા બોલો, શું કામ છે".encode())
         events, _ = until(ws, {"type": "end"})
@@ -578,7 +647,7 @@ def test_the_opening_is_never_cut_short(phone):
     assert "clear" not in kinds and "duck" not in kinds
     assert ("customer", "હા બોલો, શું કામ છે") in lines(events)
     transcript = client.get(f"/calls/{call_id}").json()["transcript"]
-    assert transcript[0] == {"who": "agent", "text": OPENING}  # whole
+    assert transcript[2]["text"].startswith(INTRO) and "…" not in transcript[2]["text"]  # whole
 
 
 def test_her_filler_coming_back_is_not_taken_for_the_customer(phone, monkeypatch):
@@ -587,18 +656,20 @@ def test_her_filler_coming_back_is_not_taken_for_the_customer(phone, monkeypatch
     client, call_id, rec = phone
     monkeypatch.setattr(live, "FILLER_AFTER", 0.05)
     monkeypatch.setattr(live, "FILLERS", ["જી,"])
-    rec["replies"] = [(0.6, "સારું. આવજો. <END>")]
+    rec["replies"] = ["₹1,00,000 બાકી છે.", (0.6, "સારું. આવજો. <END>")]
     with client.websocket_connect(f"/calls/{call_id}/live") as ws:
         until(ws, {"who": "agent"})
-        time.sleep(0.6)
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે."})
+        time.sleep(0.6)  # she has finished; the next reply is slow, so a filler plays
         say(ws, "10 તારીખે આપીશ")
         while ws.receive().get("bytes") is None:  # the filler's audio
             pass
         say(ws, "જી")  # ...heard back through the mic
         events, _ = until(ws, {"type": "end"})
-    assert len(rec["histories"]) == 1  # the reply was not restarted
+    assert len(rec["histories"]) == 2  # the second reply was not restarted
     assert [t["who"] for t in client.get(f"/calls/{call_id}").json()["transcript"]] == \
-        ["agent", "customer", "agent"]
+        ["agent", "customer"] * 2 + ["agent"]
 
 
 def test_ha_said_as_she_finishes_a_question_is_its_answer(phone):
@@ -616,3 +687,90 @@ def test_ha_said_as_she_finishes_a_question_is_its_answer(phone):
         events, _ = until(ws, {"type": "end"})
     assert "clear" not in [e["type"] for e in events]  # no need to stop her
     assert rec["histories"][-1][-1] == {"who": "customer", "text": "હા"}  # answered, not ignored
+
+
+def test_long_pauses_inside_her_speech_are_shortened():
+    """Timbre pauses ~0.6 s at every full stop; a person on the phone pauses ~0.25 s."""
+    word = bytes([0, 16]) * 320 * 10  # 200 ms of speech
+
+    async def chunks():
+        yield word + bytes(640) * 30 + word  # a 600 ms pause between two words
+
+    async def collect():
+        return b"".join([c async for c in speech.trimmed(chunks())])
+
+    out = asyncio.run(collect())
+    assert len(out) == len(word) + speech.MAX_PAUSE + len(word)  # (no silence before the first word)
+
+
+def test_words_during_a_slow_first_reply_keep_the_history_in_order(phone, monkeypatch):
+    """Found on a real call: Gemini stalled after the intro, the customer spoke again, and the intro
+    was written into the history after their words, so Gemini got a conversation ending on her
+    turn and refused it (HTTP 400)."""
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "LEAD_IN_GRACE", 5.0)  # (this test is about the order, not the timer)
+    rec["replies"] = [(1.0, "ખોટો જવાબ."), "સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": INTRO})
+        time.sleep(0.3)
+        say(ws, "10 તારીખે RTGS કરી દઈશ")  # while the first reply is still being written
+        events, _ = until(ws, {"type": "end"})
+    assert [h["who"] for h in rec["histories"][-1]] == ["agent", "customer", "agent", "customer"]
+    assert rec["histories"][-1][2]["text"] == INTRO and ("agent", "ખોટો જવાબ.") not in lines(events)
+
+
+def test_a_stalled_gemini_after_the_intro_gets_the_fixed_ask(phone, monkeypatch):
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "LEAD_IN_GRACE", 0.2)
+    rec["replies"] = [(3.0, "ખૂબ મોડો જવાબ.")]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        events, _ = until(ws, {"text": "તમારું ₹1,00,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?"})
+        ws.send_text(json.dumps({"type": "hangup"}))
+    assert ("agent", "ખૂબ મોડો જવાબ.") not in lines(events)
+
+
+def test_timbre_requests_never_overlap(monkeypatch):
+    """Timbre allows one active request per key (a real call got 429 when the next sentence was
+    fetched while the current one was still streaming)."""
+    active, most = 0, 0
+
+    async def one_request(text, voice, speed):
+        nonlocal active, most
+        active += 1
+        most = max(most, active)
+        await asyncio.sleep(0.05)
+        yield b"\x00\x01"
+        active -= 1
+
+    monkeypatch.setattr(gnani, "_synthesize_stream", one_request)
+
+    async def go():
+        async def say(t):
+            return [c async for c in gnani.synthesize_stream(t)]
+        await asyncio.gather(say("a"), say("b"), say("c"))
+
+    asyncio.run(go())
+    assert most == 1
+
+
+def test_the_model_that_answered_last_goes_first(monkeypatch):
+    monkeypatch.setattr(llm, "HEDGE_AFTER", 0.05)
+    monkeypatch.setattr(llm, "_last_winner", None)
+    tried = []
+
+    async def handler(request):
+        name = request.url.path.split("/")[-1].split(":")[0]
+        tried.append(name)
+        if name == llm.model():
+            await asyncio.sleep(0.5)  # flash-lite overloaded today
+        return llm.httpx.Response(200, text=SSE % "જી.")
+
+    _gemini(monkeypatch, handler)
+    _collect(llm.stream("sys", []))
+    tried.clear()
+    _collect(llm.stream("sys", []))
+    assert tried == [llm.fallback_model()]  # asked first, answered at once: no hedge needed

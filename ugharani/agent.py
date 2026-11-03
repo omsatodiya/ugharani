@@ -17,11 +17,29 @@ END = "<END>"  # the agent ends its last line with this to hang up
 WEEKDAYS = ["સોમવાર", "મંગળવાર", "બુધવાર", "ગુરુવાર", "શુક્રવાર", "શનિવાર", "રવિવાર"]
 
 
+def greeting(customer: dict) -> str:
+    """Her first words, then she waits, as a person calling does. (No comma: Timbre pauses at it.)"""
+    return f"હેલો {customer['name']}?"
+
+
+def intro(settings: dict, answered_yes: bool = True) -> str:
+    """Who she is, once they answer, with the recording notice said in passing.
+
+    "હા નમસ્તે" after their "હા"/"બોલો"; plain "નમસ્તે" after "કોણ?" or someone else answering.
+    """
+    yes = "હા " if answered_yes else ""
+    return (f"{yes}નમસ્તે. હું {settings['agent_name']} બોલું છું {settings['business_name_spoken']}માંથી. "
+            "કૉલ રેકોર્ડ થાય છે હં.")
+
+
+def fallback_ask(customer: dict) -> str:
+    """The call's main question, fixed: said if Gemini fails right after the intro."""
+    return f"તમારું {rupees(customer['balance'])} નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?"
+
+
 def opening(settings: dict, customer: dict) -> str:
-    """The first line, fixed per customer so it can be synthesised before the call is answered."""
-    place = settings["business_place"].split(",")[0]
-    return (f"નમસ્તે, {customer['name']} બોલો છો? હું {settings['agent_name']}, "
-            f"{settings['business_name_spoken']}, {place}થી બોલું છું. આ કૉલ રેકોર્ડ થાય છે.")
+    """Greeting and intro as one line, for typed test conversations (a call says them as two turns)."""
+    return f"{greeting(customer)} {intro(settings, answered_yes=False)}"
 
 
 def _dues_line(customer: dict, today: date) -> str:
@@ -162,7 +180,7 @@ def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
     prompt = system_prompt(settings, customer, today, last_call)
     if history and history[-1]["who"] == "customer" and speaks_hindi(history):
         history = [*history[:-1], {"who": "customer", "text": f"{history[-1]['text']}\n{HINDI_NOW}"}]
-    return prompt, history
+    return prompt, [dict(h) for h in history]  # a snapshot: the call goes on while Gemini writes
 
 
 GUJARATI_DIGITS = str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")

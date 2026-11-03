@@ -36,6 +36,8 @@ BYTES_PER_SECOND = gnani.TTS_SAMPLE_RATE * 2  # 16 kHz mono PCM16
 # Timings in seconds; tests shorten them.
 GREETING_WAIT = 1.2    # how long to wait for the customer's "હેલો" before speaking first
 GREETING_HEARD = 4.0   # once they started saying something, wait this long for the transcript
+GREETING_REPLY = 4.0   # after "હેલો રમેશભાઈ?", how long to wait for their answer
+LEAD_IN_GRACE = 1.5    # Gemini's first words this long after the intro ends at the latest, else a fixed ask
 FILLER_AFTER = 1.6     # reply not started by then: say a filler (the reply's own "જી." usually comes first)
 PREBUFFER = 0.4        # audio held back before a segment starts, so the phone never runs dry mid-word
 NO_REPLY = 8.0         # silence after the agent finishes before "hello?"
@@ -45,6 +47,7 @@ AFTER_LAST_WORD = 0.6  # pause after the goodbye before the line drops
 DUCK_MAX = 2.0         # her voice dips when talked over; back up if no words follow by then
 ECHO_ONSET = 0.6       # her own voice reaches the mic this soon after she starts: no ducking yet
 ECHO_TAIL = 0.2        # speech starting this soon after she stops may still be her echo
+ECHO_DELAY = 0.8       # her voice reaches the mic (and Gnani's VAD fires) at most this late
 FILLER_GAP = 4.0       # at most one filler this often
 ANSWER_EARLY = 1.5     # words heard this close to the end of her question are its answer
 ECHO_WINDOW = 15.0     # an overheard transcript is compared with what she said this recently
@@ -56,10 +59,11 @@ FILLERS = ["જી,", "હા,", "અચ્છા,"]
 # bundled clips, so the first word of a reply plays the moment Gemini writes it.
 ACKS = ["હા જી.", "જી.", "સારું.", "બરાબર.", "અચ્છા.", "હં."]
 HELLO = "હેલો? સાંભળાય છે?"
+HELLO_SHORT = "હેલો?"
 NO_ANSWER_BYE = "લાગે છે લાઇન બરાબર નથી. હું થોડી વાર પછી ફોન કરું છું. આવજો."
 SORRY = "માફ કરજો, લાઇન થોડી ખરાબ છે. ફરી કહેશો?"
 LINE_DROP_BYE = "માફ કરજો, લાઇનમાં તકલીફ છે. હું પછી ફોન કરું છું. આવજો."
-FIXED_LINES = [*FILLERS, *ACKS, HELLO, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE]
+FIXED_LINES = [*FILLERS, *ACKS, HELLO, HELLO_SHORT, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE]
 
 
 def time_up_bye(settings: dict) -> str:
@@ -159,6 +163,16 @@ BACKCHANNEL = {"હા", "હાં", "હં", "હમ", "હમ્મ", "જ�
                "हाँ", "हां", "हा", "जी", "हम्म", "अच्छा", "ठीक", "ठीक है", "बराबर"}
 
 
+YES = {"હા", "હાં", "હં", "જી", "બોલો", "બોલ", "બોલિએ", "બોલીએ", "બોલિયે", "હેલો", "હલો", "હા જી", "ok", "ઓકે",
+       "हाँ", "हां", "हा", "जी", "बोलिए", "बोलो", "हेलो", "हैलो"}
+
+
+def said_yes(text: str) -> bool:
+    """Did they answer "હેલો રમેશભાઈ?" with a yes ("હા", "હા બોલો", "હેલો")? Not: "કોણ?", "ના, એ બહાર છે"."""
+    words = _words(text)
+    return bool(words) and words[0] in YES and "ના" not in words
+
+
 def is_backchannel(text: str) -> bool:
     """One or two listening words ("હા", "હા હા", "હા જી"), not something to answer."""
     words = _words(text)
@@ -200,7 +214,8 @@ class LiveCall:
         # What the phone plays when: [{"text", "start", "end"}] per segment, for echo and interruptions.
         self._timeline: list[dict] = []
         self._ducked = False
-        self._protected_until = 0.0  # the opening plays until then and can't be interrupted
+        self._protected_until = 0.0  # the intro plays until then and can't be interrupted
+        self._stage = "hello"  # hello -> greeting (asked for them by name) -> talk
         self._unduck_timer: asyncio.Task | None = None
         self._cut_unheard: list[dict] | None = None  # set by an interruption for the reply being cut
         self.stt_events: dict[str, int] = {}  # what Gnani sent, counted (logged at the end)
@@ -328,7 +343,9 @@ class LiveCall:
         self._last_filler, self._filler_at, self._filled = text, self._now(), True
         log.info("call: filler %s", text)
 
-    async def _reply(self) -> None:
+    async def _reply(self, lead_in: str | None = None) -> None:
+        """Gemini's answer, spoken as it is written. `lead_in`: a fixed line (the intro) said first,
+        while Gemini writes; it can't be interrupted, and Gemini's own "જી." after it is dropped."""
         self._turn_spoke = False
         self._filled = False
         heard_at = self._now()
@@ -337,17 +354,25 @@ class LiveCall:
         hang = False
         system, convo = agent.for_gemini(self.settings, self.customer, self.history, self.today, self.last_call)
         ready: asyncio.Queue = asyncio.Queue()  # (text, audio queue) in speaking order; None at the end
+        if lead_in:
+            ready.put_nowait((lead_in, self._fetch(lead_in)))
 
         async def write():
             """Gemini's reply, cut into segments; each segment's audio is fetched as soon as it exists."""
             nonlocal hang
+            after_lead_in = bool(lead_in)
             try:
                 async for seg in segments(sentences(llm.stream(system, convo))):
                     text, end = agent.split_end(seg)
                     hang |= end
                     if not text:
                         continue
-                    if self._filled and not self._turn_spoke:
+                    if after_lead_in:  # "...રેકોર્ડ થાય છે હં. જી. તમારું..." would stutter
+                        after_lead_in = False
+                        if text in ACKS:
+                            continue
+                        text = drop_ack(text)
+                    elif self._filled and not self._turn_spoke:
                         if text in ACKS:
                             continue  # the filler already acknowledged
                         text = drop_ack(text)
@@ -358,28 +383,57 @@ class LiveCall:
                 await ready.put(e)
 
         writer = asyncio.create_task(write())
+
+        def said(text: str) -> None:
+            # Into the history the moment it starts playing, so the order is always what was heard
+            # (her intro before the customer's next words, even if this reply is cancelled later).
+            spoken.append(text)
+            self._add("agent", text)
+
         try:
-            while (item := await ready.get()) is not None:
+            while True:
+                if lead_in and spoken == [lead_in]:  # Gemini must follow the intro without a gap
+                    wait = max(0.1, self._speaking_until - self._now()) + LEAD_IN_GRACE
+                    try:
+                        item = await asyncio.wait_for(ready.get(), timeout=wait)
+                    except TimeoutError:
+                        log.warning("call: no reply from Gemini by the end of the intro; fixed ask instead")
+                        writer.cancel()
+                        line = agent.fallback_ask(self.customer)
+                        self._turn_spoke = True
+                        said(line)
+                        await self.say(line)
+                        break
+                else:
+                    item = await ready.get()
+                if item is None:
+                    break
                 if isinstance(item, Exception):
                     raise item
                 text, audio = item
                 filler.cancel()
                 if not self._turn_spoke:
                     log.info("turn: first audio %.2fs after the customer", self._now() - heard_at)
-                self._turn_spoke = True
-                spoken.append(text)  # (an interruption trims what wasn't heard)
+                if text != lead_in:  # (more speech during the intro still restarts the reply)
+                    self._turn_spoke = True
+                said(text)  # (an interruption trims what wasn't heard)
+                if text == lead_in:
+                    self._protected_until = float("inf")  # the recording notice is said in full
                 await self._play(text, audio)
+                if text == lead_in:
+                    self._protected_until = self._speaking_until
         except (llm.LLMError, gnani.GnaniError) as e:
             log.warning("call: reply failed: %s", e)
             filler.cancel()
-            if not spoken:
-                await self.say(SORRY)
-                spoken.append(SORRY)
+            if spoken in ([], [lead_in]):  # Gemini said nothing: a fixed line keeps the call going
+                line = agent.fallback_ask(self.customer) if lead_in else SORRY
+                said(line)
+                await self.say(line)
         finally:
             filler.cancel()
             writer.cancel()
-            if spoken:
-                self._add("agent", " ".join(spoken))
+            if self._protected_until == float("inf"):  # (stopped during the intro)
+                self._protected_until = self._speaking_until
             if self._cut_unheard is not None:  # interrupted: keep only what the customer heard
                 self._trim_agent(self._cut_unheard)
                 self._cut_unheard = None
@@ -389,7 +443,7 @@ class LiveCall:
             self._again = False
             self._turn = asyncio.create_task(self._reply())
 
-    def _start_reply(self) -> None:
+    def _start_reply_now(self) -> None:
         if self._turn and not self._turn.done():
             if self._turn_spoke:
                 self._again = True  # don't cut a sentence off mid-word: answer once it is said
@@ -425,8 +479,16 @@ class LiveCall:
             self._ducked = False
             await self._send_event({"type": "unduck"})
 
-    def _is_echo(self, text: str) -> bool:
-        said = " ".join(e["text"] for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW)
+    def _is_echo(self, text: str, started: float) -> bool:
+        """Her own voice coming back? A sentence is compared with what she said recently; a short
+        phrase only with what she was saying when it started ("હા" from her intro 10 s ago doesn't
+        make the customer's "હા" an echo)."""
+        if len(_words(text)) <= 3:
+            lines = [e["text"] for e in self._timeline
+                     if e["start"] <= started + ECHO_TAIL and e["end"] >= started - ECHO_DELAY]
+        else:
+            lines = [e["text"] for e in self._timeline if e["end"] > self._now() - ECHO_WINDOW]
+        said = " ".join(lines)
         if echoes(text, said):
             log.info("call: echo of her own voice (%.2f): %s", similarity(text, said), text)
             return True
@@ -513,7 +575,7 @@ class LiveCall:
                 await self._unduck()
                 return
             # Speech that began while she was audible (or just after) may be her own voice coming back.
-            if self._lead > -ECHO_TAIL and self._is_echo(text):
+            if self._lead > -ECHO_TAIL and self._is_echo(text, started if started is not None else self._now()):
                 await self._unduck()
                 return
             if over_agent:
@@ -536,26 +598,48 @@ class LiveCall:
             self._prompted = False
             self._add("customer", text)
             await self._send_event({"type": "line", "who": "customer", "text": text})
-            if self.history[0]["who"] != "customer" or len(self.history) > 1:
-                # (the first "હેલો" before the opening is answered by the opening itself)
-                self._start_reply()
+            self._start_reply()  # (during the greeting, its answer is handled by _greet)
         elif kind == "error":
             log.warning("call: STT error: %s", event.get("message"))
 
     # ---------- the call ----------
 
-    async def _greet(self) -> None:
-        """Real calls start with the customer's "હેલો"; don't talk over it."""
-        deadline = self._now() + GREETING_WAIT
+    async def _wait_for_customer(self, seconds: float) -> bool:
+        """Wait until the customer has said something new (or is mid-sentence, a little longer)."""
+        said = sum(h["who"] == "customer" for h in self.history)
+        deadline = self._now() + seconds
         while self._now() < deadline or (self._heard_at and self._now() < self._heard_at + GREETING_HEARD):
-            if self.history:  # they said hello
-                break
+            if sum(h["who"] == "customer" for h in self.history) > said:
+                return True
             await asyncio.sleep(0.05)
-        line = agent.opening(self.settings, self.customer)
+        return False
+
+    async def _greet(self) -> None:
+        """Like a person calling: let them say "હેલો", ask for them by name, wait, then say who she is.
+
+        The intro carries the recording notice, so it can't be interrupted; the reason for the call is
+        written by Gemini while the intro plays, and follows it without a gap.
+        """
+        self._stage = "hello"
+        await self._wait_for_customer(GREETING_WAIT)  # their "હેલો", if they say it first
+        self._stage = "greeting"
+        line = agent.greeting(self.customer)
         await self.say(line)
-        self._protected_until = self._speaking_until  # (all of it is sent: cached, instant)
         self._add("agent", line)
+        answered = await self._wait_for_customer(GREETING_REPLY + self._speaking_until - self._now())
+        if not answered:  # silence: once more, then go on (some people just listen)
+            await self.say(HELLO_SHORT)
+            self._add("agent", HELLO_SHORT)
+            answered = await self._wait_for_customer(GREETING_REPLY + self._speaking_until - self._now())
+        last = self.history[-1]["text"] if answered else ""
+        self._stage = "talk"
         self._last_heard = self._now()
+        self._turn = asyncio.create_task(self._reply(lead_in=agent.intro(self.settings, said_yes(last))))
+
+    def _start_reply(self) -> None:
+        if self._stage != "talk":
+            return  # the greeting is still going: its answer is handled there
+        self._start_reply_now()
 
     async def _watch(self) -> None:
         """Silence and the time limit."""
@@ -600,8 +684,8 @@ class LiveCall:
     async def _greet_then_watch(self) -> None:
         try:
             await self._greet()
-        except gnani.GnaniError as e:
-            log.warning("call: opening failed: %s", e)
+        except Exception as e:  # a call must end, not hang, whatever went wrong
+            log.warning("call: opening failed: %r", e)
             self.ended_by = "line_drop"
             self.done.set()
             return
@@ -610,7 +694,8 @@ class LiveCall:
 
 async def warm_up(settings: dict, customer: dict) -> None:
     """Synthesise the opening and fixed lines while the phone rings, so answering is instant."""
-    for text in [agent.opening(settings, customer), *FIXED_LINES]:
+    for text in [agent.greeting(customer), agent.intro(settings, True), agent.intro(settings, False),
+                 *FIXED_LINES]:
         try:
             await speech.speak(text)
         except gnani.GnaniError as e:

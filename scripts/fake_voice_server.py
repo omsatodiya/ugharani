@@ -29,9 +29,9 @@ import uvicorn  # noqa: E402
 
 from ugharani import gnani, llm, main, speech  # noqa: E402
 
-# (seconds of call audio when they start talking, what they say). The bundled opening plays from
-# about 1.2 s to 9.3 s; the agent's first reply from about 10.5 s for 3 s, so line 2 cuts into it.
-CUSTOMER = [(9.8, "હા બોલો"), (11.5, "અરે, મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"), (16.5, "હા બરાબર")]
+# (seconds of call audio when they start talking, what they say). The greeting plays at about
+# 1.2 s and she waits; the intro and her first reply follow the answer (~4-11 s), so line 2 cuts in.
+CUSTOMER = [(3.0, "હા બોલો"), (8.8, "અરે, મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"), (16.5, "હા બરાબર")]
 SPEAKING = 0.6  # each line lasts this long; the transcript comes when it ends
 
 

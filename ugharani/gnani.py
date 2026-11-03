@@ -15,7 +15,7 @@ from datetime import date
 import httpx
 import websockets
 
-from ugharani.config import get_settings
+from ugharani.config import get_settings, tts_speed
 
 log = logging.getLogger("uvicorn.error")
 
@@ -115,13 +115,14 @@ def _wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _tts_body(text: str) -> dict:
+def _tts_body(text: str, voice: str | None = None, speed: float | None = None) -> dict:
     s = get_settings()
     return {
         "text": text,
         "model": s.tts_model,
-        "voice": s.tts_voice,
+        "voice": voice or s.tts_voice,
         "language": s.language,
+        "speed": speed if speed is not None else tts_speed(),  # 0.85-1.15
         # raw PCM chunks: played as they arrive on a call, wrapped in a WAV header for clips
         "audio_config": {
             "sample_rate": TTS_SAMPLE_RATE,
@@ -133,15 +134,34 @@ def _tts_body(text: str) -> dict:
     }
 
 
-async def synthesize_stream(text: str) -> AsyncIterator[bytes]:
+_tts_locks: dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
+
+
+def _tts_lock() -> asyncio.Lock:
+    """Timbre allows one request at a time per key ("429: Only 1 active request is allowed at a time",
+    seen on a real call), so every synthesis waits its turn. (One lock per event loop.)"""
+    loop = asyncio.get_running_loop()
+    if loop not in _tts_locks:
+        _tts_locks.clear()  # an old loop (tests) is gone
+        _tts_locks[loop] = asyncio.Lock()
+    return _tts_locks[loop]
+
+
+async def synthesize_stream(text: str, voice: str | None = None, speed: float | None = None) -> AsyncIterator[bytes]:
     """POST /api/v1/tts/sse and yield raw 16 kHz mono PCM16 chunks as Timbre makes them."""
+    async with _tts_lock():
+        async for chunk in _synthesize_stream(text, voice, speed):
+            yield chunk
+
+
+async def _synthesize_stream(text: str, voice: str | None, speed: float | None) -> AsyncIterator[bytes]:
     s = get_settings()
     _spend()
     event = None
     sent = False
     async with httpx.AsyncClient(timeout=60) as client:
         async with client.stream("POST", f"{s.gnani_base_url}/api/v1/tts/sse", headers=s.auth_headers,
-                                 json=_tts_body(text)) as resp:
+                                 json=_tts_body(text, voice, speed)) as resp:
             if resp.status_code != 200:
                 raise GnaniError(f"HTTP {resp.status_code}: {(await resp.aread()).decode(errors='replace')[:200]}")
             async for line in resp.aiter_lines():

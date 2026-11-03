@@ -19,10 +19,10 @@ def settings(tmp_path):
     conn.close()
 
 
-def test_opening_names_the_business_and_says_it_records(settings):
-    line = agent.opening(settings, CUSTOMER)
-    assert line.startswith("નમસ્તે, રમેશભાઈ બોલો છો?")
-    assert "જીનિયસ પોલીપ્લાસ્ટ, ગોંડલથી" in line and "રેકોર્ડ" in line
+def test_the_opening_is_two_turns_like_a_person_calling(settings):
+    assert agent.greeting(CUSTOMER) == "હેલો રમેશભાઈ?"  # (no comma: Timbre pauses at commas)
+    assert agent.intro(settings) == "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં."
+    assert agent.intro(settings, answered_yes=False).startswith("નમસ્તે. હું કાવ્યા")
 
 
 def test_prompt_carries_dues_contacts_and_rules(settings):

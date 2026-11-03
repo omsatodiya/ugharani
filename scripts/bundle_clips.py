@@ -25,7 +25,9 @@ def fixed_sentences() -> list[str]:
         seed(conn, today=date.today())
         summary = reminders.summary_text(reminders.due_items(conn, date.today()))
         rules = followup.get_settings(conn)
-        openings = [agent.opening(rules, c) for c in followup.customers(conn)]  # the sample customers' calls
+        # how each sample customer's call starts: "હેલો રમેશભાઈ?", then the intro (after a yes, or not)
+        openings = [agent.greeting(c) for c in followup.customers(conn)]
+        openings += [agent.intro(rules, True), agent.intro(rules, False)]
         conn.close()
     return [summary, reminders.summary_text([]), *speech.QUESTIONS.values(), *live.FIXED_LINES, *openings]
 

@@ -39,7 +39,12 @@ def tts_model() -> str:
 
 
 def tts_voice() -> str:
-    return os.getenv("TTS_VOICE", "Shivani")
+    return os.getenv("TTS_VOICE", "Tarika")  # chosen by ear over Shivani, Riyaa and Kalpana (Nov 3)
+
+
+def tts_speed() -> float:
+    """Timbre's speed, 0.85-1.15 (1.0: normal)."""
+    return float(os.getenv("TTS_SPEED", "1.0"))
 
 
 def ledger_db_path() -> str:
