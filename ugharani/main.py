@@ -363,8 +363,9 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
     """The answered call's audio: the phone page sends the customer's PCM, gets the agent's back.
 
     Binary frames both ways are 16 kHz mono PCM16. Text frames: the page may send
-    {"type": "hangup"}; the server sends {"type": "line", "who", "text"} and, when the
-    agent hangs up, {"type": "end"}.
+    {"type": "hangup"}; the server sends {"type": "line", "who", "text"}; "pause" / "resume"
+    (hold her unplayed audio, then go on), "clear" (drop it), "duck" / "unduck" (dip her voice)
+    while talked over; and, when the agent hangs up, {"type": "end"}.
     """
     conn = db.connect()
     try:
@@ -391,6 +392,7 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
                 while not session.done.is_set():
                     kind, data = live.browser_message(await ws.receive())
                     if kind == "audio":
+                        await session.voice(data)  # (pauses her at once if talked over)
                         await stt.send(data)
                     elif kind in ("hangup", "closed"):
                         session.ended_by = session.ended_by or "customer"

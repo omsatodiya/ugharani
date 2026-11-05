@@ -774,3 +774,177 @@ def test_the_model_that_answered_last_goes_first(monkeypatch):
     tried.clear()
     _collect(llm.stream("sys", []))
     assert tried == [llm.fallback_model()]  # asked first, answered at once: no hedge needed
+
+
+# ---------- paused when talked over (our own speech detector) ----------
+
+FRAME = 1024  # bytes per message from the phone page: 32 ms
+
+
+def talk(ws, seconds, level=LOUD):
+    """The customer's voice reaching the mic (loud PCM), as the phone page sends it."""
+    for _ in range(round(seconds * 16000 * 2 / FRAME)):
+        ws.send_bytes(level * (FRAME // 2))
+
+
+def hush(ws, seconds):
+    talk(ws, seconds, level=b"\0\0")
+
+
+def test_talked_over_she_pauses_at_once_then_stops_for_real_words(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["અચ્છા. તો UTR નંબર મોકલી દેશો? <END>"]
+    _long_reply(rec)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        time.sleep(0.4)
+        talk(ws, 0.3)  # ~0.25 s of voice is enough
+        events, _ = until(ws, {"type": "pause"})
+        ws.send_bytes(b"START")
+        talk(ws, 1.0)  # (still talking: stays paused, whatever the time)
+        hush(ws, 0.4)
+        ws.send_bytes("TEXT:મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે".encode())
+        events, _ = until(ws, {"type": "clear"})
+        assert "resume" not in [e["type"] for e in events]
+        events, _ = until(ws, {"type": "end"})
+        assert ("agent", "અચ્છા.") in lines(events)
+    agent_line = rec["histories"][1][-2]["text"]
+    assert agent_line.endswith("…") and "મોકલશો?" not in agent_line  # cut where it paused
+
+
+def test_a_cough_pauses_her_briefly_then_she_goes_on(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["સારું. આવજો. <END>"]
+    _long_reply(rec, seconds=2.0)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        talk(ws, 0.3)  # a cough: Gnani hears no speech
+        until(ws, {"type": "pause"})
+        t = time.monotonic()
+        hush(ws, 0.4)
+        events, _ = until(ws, {"type": "resume"})
+        assert time.monotonic() - t < live.RESUME_AFTER + 0.6
+        assert "clear" not in [e["type"] for e in events]
+        time.sleep(2.2)  # (the rest of her line, played later by the pause's length)
+        say(ws, "હા, 10 તારીખે")
+        until(ws, {"type": "end"})
+    assert rec["histories"][1][-2]["text"] == f"{INTRO} {LONG_LINE}"  # said in full, no "…"
+
+
+def test_listening_noise_or_her_echo_resumes_her(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["સારું. આવજો. <END>"]
+    _long_reply(rec, seconds=3.0)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        talk(ws, 0.3)
+        until(ws, {"type": "pause"})
+        say(ws, "હા હા")
+        events, _ = until(ws, {"type": "resume"})
+        assert "clear" not in [e["type"] for e in events]
+        hush(ws, 1.0)  # (they stopped)
+        time.sleep(live.ECHO_ONSET + 0.1)
+        talk(ws, 0.3)
+        until(ws, {"type": "pause"})
+        say(ws, "1,00,000 નું પેમેન્ટ બાકી છે")  # her own words coming back
+        events, _ = until(ws, {"type": "resume"})
+        assert "clear" not in [e["type"] for e in events]
+        ws.send_text(json.dumps({"type": "hangup"}))
+    assert len(rec["histories"]) == 1  # neither got a reply
+
+
+def test_no_pause_during_the_intro_or_as_her_echo_starts(phone):
+    client, call_id, rec = phone
+    speech._save(speech.clip_key(INTRO), LOUD * 32000)  # the intro plays for two seconds
+    rec["replies"] = ["₹1,00,000 બાકી છે.", "સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા")
+        until(ws, {"text": INTRO})
+        time.sleep(live.ECHO_ONSET + 0.1)
+        talk(ws, 0.5)  # over the recording notice
+        hush(ws, 0.4)
+        say(ws, "હા બોલો")
+        events, _ = until(ws, {"type": "end"})
+    assert {"pause", "clear"}.isdisjoint(e["type"] for e in events)
+
+
+def test_talking_on_and_on_stops_her(phone, monkeypatch):
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "PAUSE_MAX", 0.3)
+    _long_reply(rec, seconds=3.0)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        talk(ws, 0.3)
+        until(ws, {"type": "pause"})
+        for _ in range(8):  # still talking past PAUSE_MAX (no words from Gnani yet): she stops
+            talk(ws, 0.1)
+            time.sleep(0.1)
+        until(ws, {"type": "clear"})
+        ws.send_text(json.dumps({"type": "hangup"}))
+    assert client.get(f"/calls/{call_id}").json()["transcript"][-1]["text"].endswith("…")
+
+
+def test_time_up_while_paused_says_goodbye(phone, monkeypatch):
+    client, call_id, rec = phone
+    _long_reply(rec, seconds=3.0)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        _start_long_reply(ws)
+        talk(ws, 0.3)
+        until(ws, {"type": "pause"})
+        monkeypatch.setattr(live, "MAX_CALL", 0.0)
+        events, _ = until(ws, {"type": "end"})
+        assert "resume" in [e["type"] for e in events]  # (she finishes, then the goodbye)
+        assert lines(events)[-1][1] == live.time_up_bye({"owner_name": "શેઠ"})
+
+
+# ---------- the speech detector itself ----------
+
+def _pcm(level, seconds):
+    return (int(level).to_bytes(2, "little", signed=True)) * int(16000 * seconds)
+
+
+def test_voice_starts_after_a_quarter_second_and_stops_after_quiet():
+    from ugharani import vad
+    v = vad.Voice()
+    assert v.feed(_pcm(0, 1.0), echo=None) == []
+    assert v.feed(_pcm(3000, 0.1), echo=None) == []  # a click, a short "હં"
+    assert v.feed(_pcm(0, 0.5), echo=None) == []
+    assert v.feed(_pcm(3000, 0.25), echo=None) == ["start"]
+    assert v.feed(_pcm(0, 0.2), echo=None) == []  # a gap between words
+    assert v.feed(_pcm(3000, 0.5), echo=None) == []
+    assert v.feed(_pcm(0, 0.35), echo=None) == ["stop"]
+
+
+def test_voice_ignores_her_echo_and_steady_noise():
+    from ugharani import vad
+    v = vad.Voice()
+    assert v.feed(_pcm(1200, 0.5), echo=0.0) == []  # her voice leaking back as she starts: learned
+    assert v.feed(_pcm(1500, 1.0), echo=1.0) == []  # a bit louder echo: still not speech
+    assert v.feed(_pcm(5000, 0.3), echo=2.0) == ["start"]  # someone much louder than the echo
+    n = vad.Voice()
+    assert n.feed(_pcm(300, 1.0), echo=None) == []  # hiss below speech level
+    assert n.feed(_pcm(0, 0.1) + _pcm(700, 30), echo=None).count("start") <= 1
+
+
+def test_words_begun_as_the_intro_ends_still_stop_her_reply(phone):
+    """Found by the browser check: they started talking just as the intro ended; she paused (the
+    reply had begun), but their words counted as 'said over the intro', so she went on."""
+    client, call_id, rec = phone
+    rec["replies"] = ["અચ્છા. UTR મોકલી દેશો? <END>"]
+    _long_reply(rec)
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        time.sleep(0.6)
+        say(ws, "હા બોલો")
+        until(ws, {"text": INTRO})
+        ws.send_bytes(b"START")  # (Gnani: speech starts while the intro is still playing)
+        until(ws, {"text": LONG_LINE})
+        time.sleep(live.ECHO_ONSET + 0.1)
+        talk(ws, 0.3)
+        until(ws, {"type": "pause"})
+        ws.send_bytes("TEXT:મેં તો પેમેન્ટ કરી દીધું છે".encode())
+        t = time.monotonic()
+        events, _ = until(ws, {"type": "clear"})
+        assert time.monotonic() - t < 0.5 and "resume" not in [e["type"] for e in events]
+        until(ws, {"type": "end"})

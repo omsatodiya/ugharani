@@ -26,6 +26,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 SERVER = os.getenv("SERVER", "http://localhost:8000")
 PORT = 9333
+MIC_WAV = Path(os.getenv("MIC_WAV", "out/fake_mic.wav"))  # written by fake_voice_server.py
 CHROME = next((p for p in [os.getenv("CHROME", ""),
                            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -34,14 +35,20 @@ CHROME = next((p for p in [os.getenv("CHROME", ""),
 
 # Runs before the page's own scripts: records what the call websocket sends and receives.
 SPY = """
-window.__spy = {sent: 0, events: [], audio: 0, played: 0};
+window.__spy = {sent: 0, events: [], audio: 0, played: 0, held: [], resumedMidClip: 0};
 const NativeWS = window.WebSocket;
 window.WebSocket = function (url, protocols) {
   const ws = new NativeWS(url, protocols);
   const send = ws.send.bind(ws);
   ws.send = (data) => { if (typeof data !== "string") __spy.sent++; return send(data); };
   ws.addEventListener("message", (e) => {
-    if (typeof e.data === "string") __spy.events.push(JSON.parse(e.data));
+    if (typeof e.data === "string") {
+      const msg = JSON.parse(e.data);
+      __spy.events.push(msg);
+      if (msg.type === "pause") setTimeout(() => {  // (what the page did with it)
+        __spy.held.push({held: live?.held?.length ?? -1, playing: live?.sources.size ?? -1});
+      }, 100);
+    }
     else __spy.audio += e.data.byteLength;
   });
   return ws;
@@ -50,7 +57,10 @@ window.WebSocket.prototype = NativeWS.prototype;
 Object.assign(window.WebSocket, {CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3});
 const start = AudioBufferSourceNode.prototype.start;
 AudioBufferSourceNode.prototype.start = function (...a) {
-  if (this.buffer && this.buffer.sampleRate === 16000) __spy.played += this.buffer.duration;
+  if (this.buffer && this.buffer.sampleRate === 16000) {
+    __spy.played += this.buffer.duration - (a[1] || 0);
+    if (a[1] > 0) __spy.resumedMidClip++;
+  }
   return start.apply(this, a);
 };
 """
@@ -92,7 +102,8 @@ async def main(customer: str) -> int:
     profile = tempfile.mkdtemp(prefix="ugharani-chrome-")
     chrome = subprocess.Popen([
         CHROME, "--headless=new", f"--remote-debugging-port={PORT}", f"--user-data-dir={profile}",
-        "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",  # mic: a test tone
+        "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",  # mic: a test tone,
+        *([f"--use-file-for-fake-audio-capture={MIC_WAV.resolve()}"] if MIC_WAV.exists() else []),  # or this
         "--autoplay-policy=no-user-gesture-required", "--no-first-run", "about:blank",
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     problems = []
@@ -135,7 +146,10 @@ async def main(customer: str) -> int:
         elif e["type"] != "line":
             print(f"  [{e['type']}]")
     print(f"mic frames sent: {spy['sent']}, agent audio received: {spy['audio'] / 32000:.1f}s, "
-          f"played: {spy['played']:.1f}s")
+          f"played: {spy['played']:.1f}s; on pause, the page held/played: {spy['held']}, "
+          f"resumed mid-clip {spy['resumedMidClip']}x")
+    if any(h["held"] < 1 or h["playing"] != 0 for h in spy["held"]):
+        problems.append("a pause did not hold her audio (or something kept playing)")
     if spy["sent"] < 100:
         problems.append("the microphone barely sent anything")
     if spy["audio"] == 0 or spy["played"] == 0:

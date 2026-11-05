@@ -64,6 +64,31 @@ it was echo; stopping is only done on words that are clearly not hers.
 Phone side: `duck` / `unduck` ramp the line volume (80 ms); `clear` stops every scheduled
 buffer and resets the playback clock.
 
+### Pause at once, then decide (Nov 4)
+
+Ducking alone still sounded like she talked on for 2-3 s over the customer (Gnani's transcript
+only comes after they stop). Now the server runs its own speech detector (`ugharani/vad.py`) on
+every 20 ms of the customer's audio, so she **pauses** about 0.25 s after they start talking:
+
+- **detector**: loudness, no model (free on Render's CPU). Talking = 10 of the last 12 windows
+  above max(-35 dBFS, 3x the background noise, 2x her echo); stopped = 300 ms of quiet. The
+  echo level is learned in her first 0.6 s after each silence (and she never pauses then).
+- **phone**: `pause` fades her out in 30 ms and keeps her unplayed audio; `resume` goes on from
+  the last gap before the word she was cut in (at most 0.4 s back), like a person picking up
+  their sentence; `clear` drops it. The server sends nothing new while paused and shifts its
+  timeline by the pause's length on resume.
+- **decide**, on Gnani's words: her echo, "હા"/"હં", empty, or "હા" answering the question she
+  was finishing → `resume`; real words → `clear` and answer. No words at all: resume 0.6 s after
+  they stop (a cough), or 2 s if Gnani heard speech. Still talking after 8 s → she stops for them.
+- never during the intro (the recording notice); never in her first 0.6 s (her echo starting).
+
+Silero VAD was the alternative: better at noise vs speech, but it needs onnxruntime and a model
+download, and it can't tell her echo from the customer either; the words decide anyway.
+
+Found by the browser check (`fake_voice_server.py` writes `out/fake_mic.wav`, the scripted
+customer as sound, for Chrome's fake mic): words begun as the intro ended paused her reply, but
+were then taken as "said over the intro" and she resumed. Paused now always means stop for words.
+
 ## Hindi and mixed speech, Nov 3
 
 Customers in Saurashtra answer in Gujarati, Hindi, or a mix with English trade words. Gnani's

@@ -11,8 +11,9 @@ Turn-taking, as a person on the phone would do it:
 - while the agent's reply is still being written, more speech from the customer restarts it
 - a reply starts with a short acknowledgement ("જી.") from a bundled clip; a filler covers a slow one
 - audio is fetched a segment ahead and held back a moment, so speech never breaks up mid-word
-- talked over: her voice dips at once; then her own echo and "હા"/"હં" are ignored, while real
-  words stop her mid-sentence and get an answer (see docs/live-calls.md)
+- talked over: she pauses at once (our own speech detector, ~0.2 s); then her own echo, "હા"/"હં"
+  or a cough let her go on where she paused, while real words stop her and get an answer
+  (see docs/live-calls.md)
 - long silence: "હેલો? સાંભળાય છે?", then a polite goodbye
 - the agent ends the call with agent.END; a hard time limit protects the credits
 """
@@ -27,7 +28,7 @@ import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 
-from ugharani import agent, gnani, llm, speech
+from ugharani import agent, gnani, llm, speech, vad
 
 log = logging.getLogger("uvicorn.error")
 
@@ -52,6 +53,9 @@ FILLER_GAP = 4.0       # at most one filler this often
 ANSWER_EARLY = 1.5     # words heard this close to the end of her question are its answer
 ECHO_WINDOW = 15.0     # an overheard transcript is compared with what she said this recently
 ECHO_SIMILARITY = 0.6  # share of its letters lining up with her lines: above this it's her own echo
+RESUME_AFTER = 0.6     # paused, they stopped, and Gnani heard no speech: go on this soon (a cough)
+WORDS_WAIT = 2.0       # paused, they stopped, Gnani heard speech: wait this long for its words
+PAUSE_MAX = 8.0        # paused this long and still talking: they have the floor; she stops
 
 # Fixed lines: synthesised once, then always played from the cache.
 FILLERS = ["જી,", "હા,", "અચ્છા,"]
@@ -217,6 +221,12 @@ class LiveCall:
         self._protected_until = 0.0  # the intro plays until then and can't be interrupted
         self._stage = "hello"  # hello -> greeting (asked for them by name) -> talk
         self._unduck_timer: asyncio.Task | None = None
+        self._voice = vad.Voice()  # is the customer talking, from their audio
+        self._paused_at: float | None = None  # the phone holds her audio since then
+        self._unpaused = asyncio.Event()
+        self._unpaused.set()
+        self._pause_watch: asyncio.Task | None = None
+        self.pauses: list[str] = []  # how each pause ended: resumed / interrupted (logged, tested)
         self._cut_unheard: list[dict] | None = None  # set by an interruption for the reply being cut
         self.stt_events: dict[str, int] = {}  # what Gnani sent, counted (logged at the end)
 
@@ -226,6 +236,7 @@ class LiveCall:
         return self._loop.time()
 
     async def _audio(self, pcm: bytes) -> None:
+        await self._unpaused.wait()  # (paused: the phone is holding her audio; send no more)
         pcm, self._carry = self._carry + pcm, b""
         if len(pcm) % 2:  # never split a sample between two messages
             pcm, self._carry = pcm[:-1], pcm[-1:]
@@ -273,6 +284,7 @@ class LiveCall:
 
         async def send(pcm: bytes) -> None:
             nonlocal entry
+            await self._unpaused.wait()
             if entry is None:  # this segment starts playing when the audio before it ends
                 start = max(self._now(), self._speaking_until)
                 entry = self._on_timeline(text, start, start)
@@ -305,10 +317,19 @@ class LiveCall:
         else:
             self.history.append({"who": who, "text": text})
 
+    def _clock(self) -> float:
+        """Where the phone is in her audio: now, or where it was paused."""
+        return self._now() if self._paused_at is None else self._paused_at
+
+    def _left(self) -> float:
+        """Seconds of her audio the phone has yet to play."""
+        return self._speaking_until - self._clock()
+
     def speaking(self) -> bool:
-        return self._now() < self._speaking_until
+        return self._left() > 0
 
     async def _until_quiet(self) -> None:
+        await self._unpaused.wait()
         await asyncio.sleep(max(0.0, self._speaking_until - self._now()))
 
     async def hang_up(self, reason: str, last_words: str | None = None) -> None:
@@ -316,6 +337,7 @@ class LiveCall:
             return
         self._ending = True
         try:
+            await self._resume("hanging up")
             if last_words:
                 await self.say(last_words)
                 self._add("agent", last_words)
@@ -330,7 +352,7 @@ class LiveCall:
 
     async def _filler_later(self) -> None:
         await asyncio.sleep(FILLER_AFTER)
-        if self.speaking() or self._now() - self._filler_at < FILLER_GAP:
+        if self.speaking() or self._paused_at is not None or self._now() - self._filler_at < FILLER_GAP:
             return
         text = random.choice([f for f in FILLERS if f != self._last_filler] or FILLERS)
         pcm = speech.cached_pcm(text)
@@ -455,7 +477,66 @@ class LiveCall:
 
     def _agent_audible(self) -> bool:
         """The agent's audio has more than ECHO_MARGIN left to play: anything heard now is likely echo."""
-        return self._speaking_until - self._now() > ECHO_MARGIN
+        return self._left() > ECHO_MARGIN
+
+    # ---------- paused: talked over, deciding ----------
+
+    async def voice(self, pcm: bytes) -> None:
+        """The customer's audio, as it arrives: pause her the moment they start talking over her."""
+        playing = self._paused_at is None and self.speaking()
+        for change in self._voice.feed(pcm, echo=self._now() - self._stretch_start if playing else None):
+            now = self._now()
+            if (change == "start" and self._agent_audible() and self._paused_at is None and not self._ending
+                    and now >= self._protected_until and now - self._stretch_start >= ECHO_ONSET):
+                await self._pause()
+
+    async def _pause(self) -> None:
+        self._paused_at = self._now()
+        self._unpaused.clear()
+        await self._send_event({"type": "pause"})
+        log.info("call: paused, talked over (%.1fs of her audio held)", self._left())
+        self._pause_watch = asyncio.create_task(self._watch_pause())
+
+    async def _watch_pause(self) -> None:
+        """No words after all (a cough, a door, a word Gnani didn't catch): go on. Still talking
+        after PAUSE_MAX: they have something to say; she stops and listens."""
+        quiet_since = None
+        while self._paused_at is not None:
+            await asyncio.sleep(0.05)
+            now = self._now()
+            if self._voice.active:
+                quiet_since = None
+                if now - self._paused_at > PAUSE_MAX:
+                    log.info("call: still talking after %.0fs: she stops", PAUSE_MAX)
+                    await self._interrupt()
+                    return
+                continue
+            quiet_since = quiet_since or now
+            # Gnani heard speech: its words are on the way (~0.5 s of silence, then the transcript)
+            wait = WORDS_WAIT if self._heard_at is not None else RESUME_AFTER
+            if now - quiet_since >= wait:
+                await self._resume("no words")
+                return
+
+    async def _resume(self, why: str) -> None:
+        """Go on from where the phone paused; everything she has sent plays that much later."""
+        if self._paused_at is None:
+            return
+        paused_at, held = self._paused_at, self._now() - self._paused_at
+        self._paused_at = None
+        if self._pause_watch and self._pause_watch is not asyncio.current_task():
+            self._pause_watch.cancel()
+        self._speaking_until = max(self._speaking_until, paused_at) + held
+        for e in self._timeline:
+            if e["end"] > paused_at:
+                e["end"] += held
+                if e["start"] > paused_at:
+                    e["start"] += held
+        self._stretch_start = self._now()  # (her echo starts again too)
+        self.pauses.append("resumed")
+        log.info("call: resumed after %.1fs (%s)", held, why)
+        await self._send_event({"type": "resume"})
+        self._unpaused.set()
 
     # ---------- talked over ----------
 
@@ -499,7 +580,7 @@ class LiveCall:
         if not self._timeline:
             return False
         last = max(self._timeline, key=lambda e: e["end"])
-        return last["text"].rstrip().endswith("?") and 0 < last["end"] - self._now() <= ANSWER_EARLY
+        return last["text"].rstrip().endswith("?") and 0 < last["end"] - self._clock() <= ANSWER_EARLY
 
     def _unheard(self, now: float) -> list[dict]:
         """What she sent but the phone hasn't played yet: [{"text", "heard"}], "heard" the part played."""
@@ -530,16 +611,24 @@ class LiveCall:
 
     async def _interrupt(self) -> None:
         """Stop talking now: the phone drops what it hasn't played, the reply being said is cancelled."""
-        now = self._now()
+        now = self._clock()  # (paused: the phone stopped there)
         unheard = self._unheard(now)
         log.info("call: interrupted; not heard: %s", " | ".join(u["text"][:30] for u in unheard))
         await self._send_event({"type": "clear"})
+        if self._paused_at is not None:
+            self._paused_at = None
+            self.pauses.append("interrupted")
+            if self._pause_watch and self._pause_watch is not asyncio.current_task():
+                self._pause_watch.cancel()
+            self._unpaused.set()
+        now = self._now()
         self._ducked = False
         if self._unduck_timer:
             self._unduck_timer.cancel()
         self._speaking_until = now
         for e in self._timeline:
             e["end"] = min(e["end"], now)
+            e["start"] = min(e["start"], now)
         if self._turn and not self._turn.done():
             self._cut_unheard = unheard  # the reply trims its own line as it stops
             self._turn.cancel()
@@ -557,43 +646,53 @@ class LiveCall:
         if kind == "speech_start":
             if self._heard_at is None:
                 now = self._heard_at = self._now()
-                self._lead = self._speaking_until - now
+                self._lead = self._left()
                 self._over_agent = self._agent_audible()
                 if (self._over_agent and not self._ending and now >= self._protected_until
+                        and self._paused_at is None
                         and now - self._stretch_start >= ECHO_ONSET):  # (sooner: her own echo starting)
                     await self._duck()  # like a person hesitating when talked over
         elif kind == "transcript":
             started, self._heard_at = self._heard_at, None
             if started is None:  # no speech_start seen: judge by now
-                self._lead, self._over_agent = self._speaking_until - self._now(), self._agent_audible()
-            over_agent = self._over_agent
+                self._lead, self._over_agent = self._left(), self._agent_audible()
+            paused = self._paused_at is not None
+            over_agent = self._over_agent or paused
+            if started is not None and paused:
+                started = min(started, self._paused_at)  # (in her audio's time)
             # The opening carries the "this call is recorded" notice: it is never cut short. Words
             # said over it are answered once it ends.
             over_opening = (started if started is not None else self._now()) < self._protected_until
             text = (event.get("text") or "").strip()
             if not text or self._ending:
                 await self._unduck()
+                await self._resume("nothing said")
                 return
             # Speech that began while she was audible (or just after) may be her own voice coming back.
-            if self._lead > -ECHO_TAIL and self._is_echo(text, started if started is not None else self._now()):
+            at = started if started is not None else self._clock()
+            if (self._lead > -ECHO_TAIL or paused) and self._is_echo(text, at):
                 await self._unduck()
+                await self._resume("her echo")
                 return
             if over_agent:
                 if self._agent_audible() and is_backchannel(text):
                     if not self._finishing_question():
                         log.info("call: listening noise while she talks: %s", text)
                         await self._unduck()
+                        await self._resume("listening noise")
                         return
                     # "હા" to her question, said as she finishes asking it: an answer, and no need
                     # to stop her; the reply follows the question
                     log.info("call: answered her question as she finished it: %s", text)
                     await self._unduck()
-                elif over_opening:
+                    await self._resume("answer to her question")
+                elif over_opening and not paused:  # (paused: the opening is over; she stops)
                     log.info("call: said over the opening, answered after it: %s", text)
                 elif self.speaking() or (self._turn and not self._turn.done()):
                     await self._interrupt()
                 else:
                     await self._unduck()
+                    await self._resume("she had finished")
             self._last_heard = self._now()
             self._prompted = False
             self._add("customer", text)
@@ -645,7 +744,7 @@ class LiveCall:
         """Silence and the time limit."""
         while not self._ending:
             await asyncio.sleep(0.2)
-            busy = (self._turn and not self._turn.done()) or self.speaking() or self._heard_at
+            busy = (self._turn and not self._turn.done()) or self.speaking() or self._heard_at or self._voice.active
             if self._now() - self._started > MAX_CALL and not (self._turn and not self._turn.done()):
                 await self.hang_up("time_up", time_up_bye(self.settings))
             elif not busy and self._now() - max(self._last_heard, self._speaking_until) > NO_REPLY:
@@ -673,6 +772,9 @@ class LiveCall:
             log.info("call: speech events from Gnani: %s", self.stt_events)
             if self._unduck_timer:
                 self._unduck_timer.cancel()
+            if self._pause_watch:
+                self._pause_watch.cancel()
+            log.info("call: pauses: %s", self.pauses or "none")
             for t in [*tasks, self._turn]:
                 if t and not t.done():
                     t.cancel()

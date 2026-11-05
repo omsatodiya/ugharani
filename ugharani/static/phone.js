@@ -160,7 +160,7 @@ async function answer() {
 
 // ---------- the live call: mic -> server -> agent's voice back, through a phone-line filter ----------
 
-let live = null; // {ws, stream, mic, worklet, line, noise, sources, playAt, opened}
+let live = null; // {ws, stream, mic, worklet, line, sources, playAt, opened, held (paused: her unplayed audio)}
 
 function phoneLine() {
   // 300-3400 Hz, like a phone line, with a little hiss so the line never sounds dead.
@@ -196,8 +196,71 @@ function clearPlayback() {
   // The customer interrupted: drop everything she hasn't said yet.
   for (const s of live.sources) { try { s.stop(); } catch {} }
   live.sources.clear();
+  live.held = null;
   live.playAt = audio.currentTime;
+  live.line.voice.gain.cancelScheduledValues(audio.currentTime);
   duck(false);
+}
+
+const FADE = 0.03;       // s: stopping or starting mid-word without a click
+const REWIND_MAX = 0.4;  // s: on resume, go back to the gap before the word she was cut in
+
+function quietPoint(data, at) {
+  // The start of the last ~40 ms gap before sample `at`, within REWIND_MAX; else `at` itself.
+  const win = 320, need = 2; // 20 ms windows at 16 kHz
+  let quiet = 0;
+  for (let end = at; end - win >= Math.max(0, at - REWIND_MAX * 16000); end -= win) {
+    let sum = 0;
+    for (let i = end - win; i < end; i++) sum += data[i] * data[i];
+    quiet = Math.sqrt(sum / win) < 0.012 ? quiet + 1 : 0;
+    if (quiet >= need) return end - win;
+  }
+  return at;
+}
+
+function pausePlayback() {
+  // Talked over: stop at once (a quick fade), but keep what she hasn't said, to go on from there.
+  if (live.held) return;
+  const at = audio.currentTime + FADE;
+  live.line.voice.gain.cancelScheduledValues(audio.currentTime);
+  live.line.voice.gain.setTargetAtTime(0, audio.currentTime, FADE / 3);
+  const held = [];
+  for (const s of [...live.sources].sort((a, b) => a.at - b.at)) {
+    const end = s.at + s.buffer.duration;
+    if (end > at) {
+      let from = Math.max(0, at - s.at);
+      if (from > 0) from = quietPoint(s.buffer.getChannelData(0), Math.floor(from * 16000)) / 16000;
+      held.push({ buffer: s.buffer, from });
+    }
+    s.onended = null;
+    try { s.stop(at); } catch {}
+  }
+  live.sources.clear();
+  live.held = held;
+  live.playAt = at;
+}
+
+function resumePlayback() {
+  // Go on from the gap before the word she stopped in, as a person picks up their sentence.
+  const held = live.held;
+  if (!held) return;
+  live.held = null;
+  live.line.voice.gain.cancelScheduledValues(audio.currentTime);
+  live.line.voice.gain.setTargetAtTime(1.0, audio.currentTime + 0.02, FADE / 3);
+  live.playAt = audio.currentTime + 0.02;
+  for (const h of held) schedule(h.buffer, h.from);
+}
+
+function schedule(clip, from = 0) {
+  const src = audio.createBufferSource();
+  src.buffer = clip;
+  src.connect(live.line.input);
+  live.playAt = Math.max(live.playAt, audio.currentTime + 0.06); // a small jitter buffer
+  src.at = live.playAt - from; // when its sample 0 would play
+  src.start(live.playAt, from);
+  live.playAt += clip.duration - from;
+  live.sources.add(src);
+  src.onended = () => live?.sources.delete(src);
 }
 
 function play(buf) {
@@ -207,14 +270,8 @@ function play(buf) {
   const clip = audio.createBuffer(1, pcm.length, 16000);
   const out = clip.getChannelData(0);
   for (let i = 0; i < pcm.length; i++) out[i] = pcm[i] / 32768;
-  const src = audio.createBufferSource();
-  src.buffer = clip;
-  src.connect(live.line.input);
-  live.playAt = Math.max(live.playAt, audio.currentTime + 0.06); // a small jitter buffer
-  src.start(live.playAt);
-  live.playAt += clip.duration;
-  live.sources.add(src);
-  src.onended = () => live?.sources.delete(src);
+  if (live.held) live.held.push({ buffer: clip, from: 0 }); // (paused: kept for later)
+  else schedule(clip);
 }
 
 async function startLive(id) {
@@ -231,7 +288,7 @@ async function startLive(id) {
 
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/calls/${id}/live`);
   ws.binaryType = "arraybuffer";
-  live = { ws, stream, mic, worklet, line: phoneLine(), sources: new Set(), playAt: 0, opened: false };
+  live = { ws, stream, mic, worklet, line: phoneLine(), sources: new Set(), playAt: 0, opened: false, held: null };
   worklet.port.onmessage = (e) => { if (ws.readyState === WebSocket.OPEN) ws.send(e.data); };
   ws.onopen = () => { if (live) live.opened = true; };
   ws.onmessage = (e) => {
@@ -241,6 +298,8 @@ async function startLive(id) {
     else if (msg.type === "duck") duck(true);
     else if (msg.type === "unduck") duck(false);
     else if (msg.type === "clear") clearPlayback();
+    else if (msg.type === "pause") pausePlayback();
+    else if (msg.type === "resume") resumePlayback();
     else if (msg.type === "end") hangup("completed", { byAgent: true });
   };
   ws.onclose = (e) => {

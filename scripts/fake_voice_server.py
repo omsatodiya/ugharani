@@ -6,6 +6,8 @@
   scripted customer at fixed times into the call, one line cutting in while the agent talks
 - Timbre: a short tone per sentence (the opening and fixed lines too), so playback can be heard
 - Gemini is real (free tier) unless FAKE_LLM=1
+- writes out/fake_mic.wav: the same customer as sound (plus a cough the STT doesn't "hear"), for
+  Chrome's fake microphone (browser_check.py uses it), so the server's own speech detector pauses her
 """
 
 import asyncio
@@ -31,8 +33,23 @@ from ugharani import gnani, llm, main, speech  # noqa: E402
 
 # (seconds of call audio when they start talking, what they say). The greeting plays at about
 # 1.2 s and she waits; the intro and her first reply follow the answer (~4-11 s), so line 2 cuts in.
-CUSTOMER = [(3.0, "હા બોલો"), (8.8, "અરે, મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"), (16.5, "હા બરાબર")]
+CUSTOMER = [(3.0, "હા બોલો"), (9.6, "અરે, મેં તો ગયા અઠવાડિયે પેમેન્ટ કરી દીધું છે"), (16.5, "હા બરાબર")]
 SPEAKING = 0.6  # each line lasts this long; the transcript comes when it ends
+COUGH = 12.6    # a short noise while she talks, no words: she pauses, then goes on
+MIC_WAV = Path("out/fake_mic.wav")
+
+
+def mic_audio() -> bytes:
+    """The customer as the phone's microphone hears them: voice-like sound while they speak."""
+    pcm = bytearray(32000 * 22)  # (Chrome loops the file; the call is over by then)
+    bursts = [(at, SPEAKING) for at, _ in CUSTOMER] + [(COUGH, 0.35)]
+    for at, seconds in bursts:
+        for i in range(int(16000 * seconds)):
+            t = i / 16000
+            v = 5000 * (0.6 + 0.4 * math.sin(2 * math.pi * 4 * t)) * (
+                math.sin(2 * math.pi * 180 * t) + 0.5 * math.sin(2 * math.pi * 720 * t))
+            struct.pack_into("<h", pcm, 2 * (int(16000 * at) + i), int(max(-32767, min(32767, v))))
+    return bytes(pcm)
 
 
 def tone(seconds: float, freq: float = 440.0) -> bytes:
@@ -107,4 +124,6 @@ if os.getenv("FAKE_LLM") == "1":
 assert speech  # (imported so its gnani reference is the patched module)
 
 if __name__ == "__main__":
+    MIC_WAV.parent.mkdir(exist_ok=True)
+    MIC_WAV.write_bytes(gnani._wav(mic_audio()))
     uvicorn.run(main.app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
