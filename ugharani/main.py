@@ -264,6 +264,18 @@ def call_queue(today: date | None = None) -> list[dict]:
         conn.close()
 
 
+@app.get("/calls/hours")
+def call_hours() -> dict:
+    """Whether automatic calls may go out right now, and the owner's call hours."""
+    conn = db.connect()
+    try:
+        rules = followup.get_settings(conn)
+    finally:
+        conn.close()
+    return {"open": followup.calling_time(rules, datetime.now()), "hours": rules["call_hours"],
+            "sunday": rules["call_on_sunday"]}
+
+
 class CallRequest(BaseModel):
     customer: str
 

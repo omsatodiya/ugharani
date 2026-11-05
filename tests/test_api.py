@@ -243,3 +243,8 @@ def test_auto_calls_wait_for_the_call_hours(client, monkeypatch):
     monkeypatch.setattr(followup, "calling_time", lambda rules, now: False)  # e.g. 2 pm, lunch
     assert client.post("/calls/run").json() == []
     assert client.post("/calls", json={"customer": "રમેશભાઈ"}).json()["status"] == "ringing"  # "call now" still works
+
+
+def test_call_hours_say_whether_auto_calls_may_go_now(client, monkeypatch):
+    monkeypatch.setattr(followup, "calling_time", lambda rules, now: True)
+    assert client.get("/calls/hours").json() == {"open": True, "hours": "10:00-13:00,16:00-19:30", "sunday": False}

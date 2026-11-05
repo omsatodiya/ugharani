@@ -313,6 +313,140 @@ async function shareReminder() {
   window.open(`https://wa.me/?text=${encodeURIComponent(reminder.say)}`, "_blank", "noopener");
 }
 
+// ---------- calls: who's due, what came of each call, what the owner must do ----------
+
+const OUTCOME = {
+  promised: ["વાયદો", "good"], paid: ["ચૂકવ્યું કહે છે", "good"], dispute: ["વાંધો", "bad"],
+  callback: ["ફરી ફોન", "warn"], handover: ["તમે ફોન કરો", "bad"], refused: ["ના પાડી", "bad"],
+  unclear: ["અધૂરું", "quiet"],
+};
+const CALL_STATUS = {
+  ringing: ["રિંગ વાગે છે", "warn"], in_progress: ["વાત ચાલુ", "warn"], missed: ["ઉપાડ્યો નહીં", "quiet"],
+  declined: ["કાપ્યો", "quiet"], failed: ["ન લાગ્યો", "quiet"], completed: ["પૂરો", "quiet"],
+};
+const REASON = { overdue: "મુદત વીતી", due_today: "આજે મુદત", retry: "ફરી પ્રયત્ન", promise_missed: "વાયદો ચૂક્યા" };
+let callsTimer;
+let hours = null;
+
+function when(iso) {
+  return new Date(iso).toLocaleString("gu-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function chip([label, kind]) {
+  return el("span", { class: `chip ${kind}` }, label);
+}
+
+function phoneLink(name) {
+  // The demo's stand-in for the customer's phone: open it (on another device) to take the call.
+  return el("a", { class: "btn small", href: `/phone.html?c=${encodeURIComponent(name)}`, target: "_blank",
+                   "aria-label": "Customer's phone" }, "📱");
+}
+
+async function callNow(name, button) {
+  button.disabled = true;
+  try {
+    await api("/calls", { method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ customer: name }) });
+    toast(`${name}ને ફોન લાગી રહ્યો છે · Calling (open their phone 📱)`);
+  } catch (e) {
+    toast(`ભૂલ · ${e.message}`);
+  }
+  refreshCalls();
+}
+
+async function runCalls() {
+  const params = new URLSearchParams();
+  if (demoToday()) params.set("today", demoToday());
+  if (!hours?.open) params.set("anytime", "true"); // outside call hours: a demo run
+  try {
+    const rung = await api(`/calls/run?${params}`, { method: "POST" });
+    toast(rung.length ? `${rung.length} ફોન લાગી રહ્યા છે · Calling ${rung.length}` : "આજે કોઈને ફોન કરવાનો નથી · Nobody to call");
+  } catch (e) {
+    toast(`ભૂલ · ${e.message}`);
+  }
+  refreshCalls();
+}
+
+function callItem(c) {
+  const live = c.status === "ringing" || c.status === "in_progress";
+  const tag = c.outcome ? OUTCOME[c.outcome] : CALL_STATUS[c.status];
+  const promise = c.promised_date
+    ? [c.promised_amount && rupees.format(c.promised_amount), formatDate(c.promised_date), c.payment_mode]
+        .filter(Boolean).join(" · ")
+    : null;
+  const turns = (c.transcript || []).map((t) =>
+    el("p", { class: "turn" }, el("b", {}, t.who === "agent" ? "કાવ્યા: " : `${c.customer}: `), t.text));
+  const writing = c.status === "completed" && !c.summary && turns.length;
+  return el("li", {},
+    el("div", { class: "row" },
+      el("div", { class: "who" },
+        el("div", { class: "name" }, c.customer),
+        el("div", { class: "meta" }, chip(tag), when(c.created_at), c.trigger === "auto" ? " · ઓટો" : "")),
+      el("span", { class: "amt" }, rupees.format(c.amount_due)),
+      live ? phoneLink(c.customer) : null),
+    c.summary ? el("p", { class: "note" }, c.summary) : null,
+    writing ? el("p", { class: "note why" }, "નોંધ લખાય છે… · Writing the notes…") : null,
+    promise ? el("p", { class: "promise" }, `વાયદો: ${promise}`) : null,
+    c.owner_action ? el("p", { class: "action" }, `➜ ${c.owner_action}`) : null,
+    turns.length ? el("details", {}, el("summary", {}, `વાતચીત · Conversation (${turns.length})`), ...turns) : null,
+  );
+}
+
+function tasksFrom(calls) {
+  // The latest call per customer: what is left for the owner to do.
+  const seen = new Set(), tasks = [];
+  for (const c of calls) {
+    if (seen.has(c.customer)) continue;
+    seen.add(c.customer);
+    const why = c.owner_action
+      || (c.outcome === "handover" ? "તમે ફોન કરો · Call them" : null)
+      || (c.outcome === "dispute" ? "વાંધો ઉકેલો · Settle the dispute" : null);
+    if (!why && !c.flags?.length) continue;
+    tasks.push(el("li", {},
+      el("div", { class: "who" },
+        el("div", { class: "name" }, c.customer),
+        el("div", {}, why || "કાવ્યાએ એક વાત ટાળી, તમે ફોન કરો · Kavya held back, call them"),
+        c.flags?.length ? el("div", { class: "why" }, `ચેકરે ${c.flags.length} વાક્ય રોક્યું · Checker stopped ${c.flags.length}`) : null),
+      el("span", { class: "amt" }, rupees.format(c.amount_due))));
+  }
+  return tasks;
+}
+
+async function refreshCalls() {
+  clearTimeout(callsTimer);
+  let calls = [];
+  try {
+    const [queue, log, h] = await Promise.all([api(withToday("/calls/queue")), api("/calls"), api("/calls/hours")]);
+    calls = log;
+    hours = h;
+    const busy = new Set(log.filter((c) => c.status === "ringing" || c.status === "in_progress").map((c) => c.customer));
+    $("hours-note").hidden = h.open;
+    $("hours-note").textContent = `ઓટો ફોન ${h.hours.replace(",", " અને ")} વચ્ચે જ જાય${h.sunday ? "" : ", રવિવારે નહીં"}; અત્યારે "બધાને ફોન" ડેમો તરીકે જશે. · Outside call hours: "Call all" runs as a demo.`;
+    $("run-calls").disabled = !queue.length;
+    $("queue").replaceChildren(...(queue.length
+      ? queue.map((q) => el("li", {},
+          el("div", { class: "who" },
+            el("div", { class: "name" }, q.customer),
+            el("div", { class: "meta" }, el("span", { class: "chip overdue" }, REASON[q.reason] || q.reason), formatDate(q.due_date))),
+          el("span", { class: "amt" }, rupees.format(q.amount)),
+          busy.has(q.customer) ? phoneLink(q.customer)
+            : el("button", { class: "btn small", onclick: (e) => callNow(q.customer, e.currentTarget) }, "ફોન કરો")))
+      : [el("li", {}, el("span", { class: "empty" }, "આજે કોઈને ફોન કરવાનો નથી · Nobody to call today"))]));
+    $("call-log").replaceChildren(...(log.length
+      ? log.slice(0, 20).map(callItem)
+      : [el("li", {}, el("span", { class: "empty" }, "હજી કોઈ ફોન નથી કર્યો · No calls yet"))]));
+    const tasks = tasksFrom(log);
+    $("todo").hidden = !tasks.length;
+    $("tasks").replaceChildren(...tasks);
+  } catch (e) {
+    toast(`ભૂલ · ${e.message}`);
+  }
+  // While a call is on, or its notes are being written, keep the log fresh.
+  const active = calls.some((c) => c.status === "ringing" || c.status === "in_progress" ||
+                                   (c.status === "completed" && !c.summary && c.transcript?.length));
+  callsTimer = setTimeout(refreshCalls, active ? 3000 : 20000);
+}
+
 // ---------- start ----------
 
 function init() {
@@ -323,7 +457,9 @@ function init() {
   $("today").addEventListener("change", () => {
     try { localStorage.setItem("ugharani-today", $("today").value); } catch {}
     refresh().catch((e) => toast(`ભૂલ · ${e.message}`));
+    refreshCalls();
   });
+  $("run-calls").addEventListener("click", runCalls);
   $("mic").addEventListener("click", onMic);
   $("save").addEventListener("click", onSave);
   $("cancel").addEventListener("click", clearConvo);
@@ -338,6 +474,7 @@ function init() {
     $("summary-say").textContent = "સર્વર સાથે જોડાણ નથી · Can't reach the server";
     toast(e.message);
   });
+  refreshCalls();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 

@@ -112,7 +112,7 @@ async def live_stt(keyterms=None):
 
 async def fake_llm(system, history, max_tokens=400):
     turns = sum(h["who"] == "agent" for h in history)
-    yield ["₹1,00,000 બાકી છે, ક્યારે આવશે?", "અચ્છા. તો UTR નંબર મોકલી દેશો?",
+    yield ["₹1,20,000 બાકી છે, ક્યારે આવશે?", "અચ્છા. તો UTR નંબર મોકલી દેશો?",
            "સારું, આભાર. આવજો. <END>"][min(turns - 1, 2)]
 
 

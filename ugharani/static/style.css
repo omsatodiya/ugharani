@@ -126,6 +126,22 @@ h2 { margin: 0; font-size: 19px; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .actions .btn { flex: 1 1 140px; }
 
+.chip.good { color: var(--brand); }
+.chip.warn { color: var(--today); }
+.chip.bad { color: var(--overdue); }
+.chip.quiet { color: var(--soon); }
+
+.calls li { display: block; }
+.calls .row { display: flex; align-items: center; gap: 10px; }
+.calls .note { margin: 6px 0 0; }
+.calls .promise { margin: 4px 0 0; font-weight: 600; }
+.calls .action { margin: 4px 0 0; color: var(--accent); }
+.calls details { margin-top: 6px; }
+.calls summary { color: var(--muted); font-size: 14px; cursor: pointer; }
+.calls .turn { margin: 4px 0 0; font-size: 15px; }
+.calls .turn b { color: var(--muted); font-weight: 600; }
+.why { color: var(--muted); font-size: 14px; }
+
 .foot { text-align: center; color: var(--muted); font-size: 12px; margin: 20px 0; }
 
 .dock {

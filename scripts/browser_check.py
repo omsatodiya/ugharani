@@ -45,9 +45,13 @@ window.WebSocket = function (url, protocols) {
     if (typeof e.data === "string") {
       const msg = JSON.parse(e.data);
       __spy.events.push(msg);
-      if (msg.type === "pause") setTimeout(() => {  // (what the page did with it)
-        __spy.held.push({held: live?.held?.length ?? -1, playing: live?.sources.size ?? -1});
-      }, 100);
+      if (msg.type === "pause") {
+        const at = __spy.events.length;
+        setTimeout(() => {  // what the page did with it (unless she was already cleared or resumed)
+          if (__spy.events.slice(at).some((m) => m.type === "clear" || m.type === "resume")) return;
+          __spy.held.push({held: live?.held?.length ?? -1, playing: live?.sources.size ?? -1});
+        }, 100);
+      }
     }
     else __spy.audio += e.data.byteLength;
   });
