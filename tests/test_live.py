@@ -948,3 +948,65 @@ def test_words_begun_as_the_intro_ends_still_stop_her_reply(phone):
         events, _ = until(ws, {"type": "clear"})
         assert time.monotonic() - t < 0.5 and "resume" not in [e["type"] for e in events]
         until(ws, {"type": "end"})
+
+
+# ---------- the owner's limits, and holding the line ----------
+
+def test_a_sentence_past_the_owners_limits_is_never_said(phone):
+    client, call_id, rec = phone
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?",
+                      "અચ્છા. તો 2% ડિસ્કાઉન્ટ આપી દઈએ. 30 દિવસમાં આપી દેજો.", "સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "થોડું ડિસ્કાઉન્ટ આપો તો એક મહિનામાં આપી દઉં")
+        events, _ = until(ws, {"type": "end"})
+    said = [t for who, t in lines(events) if who == "agent"]
+    assert "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." in said
+    assert not any("ડિસ્કાઉન્ટ" in t or "30 દિવસ" in t for t in said)
+    call = client.get(f"/calls/{call_id}").json()
+    assert len(call["flags"]) == 1 and "discount" in call["flags"][0]  # the owner is told
+
+
+def test_ek_minute_gets_an_instant_ok_and_a_long_wait(phone, monkeypatch):
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "NO_REPLY", 0.3)
+    monkeypatch.setattr(live, "HOLD_WAIT", 1.5)
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?", "સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "એક મિનિટ, હું બિલ જોઈ લઉં")
+        until(ws, {"text": "હા જી, વાંધો નહીં."})
+        t = time.monotonic()
+        until(ws, {"text": live.HELLO})  # only after the hold wait, not the usual silence
+        assert time.monotonic() - t > 1.4
+        say(ws, "હા, શુક્રવારે આપી દઈશ")
+        until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 2  # the hold itself didn't go to Gemini
+
+
+def test_asks_to_hold():
+    for text in ["એક મિનિટ", "એક મિનીટ હં", "હોલ્ડ કરો", "ઊભા રહો", "एक मिनट", "એક મિનિટ, હું બિલ જોઈ લઉં"]:
+        assert live.asks_to_hold(text), text
+    for text in ["એક મહિનામાં આપીશ", "2 મિનિટ પહેલાં જ મોકલ્યા, એક મિનિટ પણ મોડું નહીં થાય એની ગેરંટી આપું છું", "ના"]:
+        assert not live.asks_to_hold(text), text
+
+
+def test_an_overloaded_model_falls_back_for_the_notes_too(monkeypatch):
+    tried = []
+
+    def handler(request):
+        name = request.url.path.split("/")[-1].split(":")[0]
+        tried.append(name)
+        if name == llm.model():
+            return llm.httpx.Response(503, text="high demand")
+        return llm.httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    _gemini(monkeypatch, handler)
+    assert asyncio.run(llm.generate("sys", [])) == "ok"
+    assert tried == [llm.model(), llm.fallback_model()]

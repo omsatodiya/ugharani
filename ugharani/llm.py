@@ -57,8 +57,13 @@ async def generate(system: str, history: list[dict], schema: dict | None = None,
     body = _body(system, history, schema, max_tokens)
     async with httpx.AsyncClient(timeout=30) as client:
         for name in (model(), fallback_model()):
-            resp = await client.post(f"{BASE}/{name}:generateContent", params={"key": _key()}, json=body)
-            if resp.status_code != 429:
+            try:
+                resp = await client.post(f"{BASE}/{name}:generateContent", params={"key": _key()}, json=body)
+            except httpx.TransportError as e:
+                if name == fallback_model():
+                    raise LLMError(f"{name}: {type(e).__name__}") from None
+                continue
+            if resp.status_code not in (429, 500, 503):  # rate limited or overloaded: try the other
                 break
     if resp.status_code != 200:
         raise LLMError(f"HTTP {resp.status_code}: {resp.text[:300]}")

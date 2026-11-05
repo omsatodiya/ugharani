@@ -5,7 +5,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -294,11 +294,14 @@ def place_call(req: CallRequest, tasks: BackgroundTasks) -> dict:
 
 
 @app.post("/calls/run")
-def run_queue(tasks: BackgroundTasks, today: date | None = None) -> list[dict]:
-    """The auto-ugharani tick: ring everyone due a call today under the owner's rules."""
+def run_queue(tasks: BackgroundTasks, today: date | None = None, anytime: bool = False) -> list[dict]:
+    """The auto-ugharani tick: ring everyone due a call today under the owner's rules, only in the
+    call hours (not Sundays or festival days). `anytime` skips that, for a demo."""
     conn = db.connect()
     try:
         rules = followup.get_settings(conn)
+        if not anytime and not followup.calling_time(rules, datetime.now()):
+            return []
         rung = []
         for q in followup.to_call(conn, today or date.today()):
             tasks.add_task(live.warm_up, rules, _customer(conn, q["customer"]))
@@ -412,7 +415,7 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
         conn = db.connect()
         try:
             # "failed" only if nothing was said at all; otherwise it's a (short) call worth noting
-            followup.end_live_call(conn, call_id, session.history, ok=bool(session.history))
+            followup.end_live_call(conn, call_id, session.history, ok=bool(session.history), flags=session.flags)
         finally:
             conn.close()
         try:

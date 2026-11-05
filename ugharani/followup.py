@@ -7,7 +7,7 @@ leave big amounts and disputes to the owner.
 
 import json
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from ugharani import reminders
 
@@ -24,8 +24,16 @@ DEFAULTS = {
     "handover_amount": "200000",    # dues at or above this go to the owner after the call
     "tone": "gentle",               # gentle | firm
     "auto_calls": "1",              # master switch for automatic calls
+    # What the agent may agree to on her own; anything more, the owner calls back.
+    "promise_days": "7",            # a date for the whole payment at most this many days ahead
+    "split_days": "15",             # part payments, if the last part comes within this many days
+    # When automatic calls go out (the owner's "call now" works any time).
+    "call_hours": "10:00-13:00,16:00-19:30",
+    "call_on_sunday": "0",
+    "holidays": "",                 # YYYY-MM-DD, comma separated: festival days, no calls
 }
-TYPES = {"remind_after_days": int, "repeat_every_days": int, "handover_amount": int, "auto_calls": bool}
+TYPES = {"remind_after_days": int, "repeat_every_days": int, "handover_amount": int, "auto_calls": bool,
+         "promise_days": int, "split_days": int, "call_on_sunday": bool}
 TONES = {"gentle", "firm"}
 OUTCOMES = {"promised", "paid", "dispute", "callback", "handover", "refused", "unclear"}
 
@@ -56,14 +64,41 @@ def update_settings(conn: sqlite3.Connection, changes: dict) -> dict:
             text = str(int(value))
         else:
             text = str(value).strip()
-            if not text:
+            if not text and key != "holidays":
                 raise ValueError(f"{key} can't be empty")
             if key == "tone" and text not in TONES:
                 raise ValueError(f"tone must be one of {sorted(TONES)}")
+            if key == "call_hours":
+                _hours(text)  # (raises if malformed)
+            if key == "holidays":
+                text = ",".join(date.fromisoformat(d.strip()).isoformat() for d in text.split(",") if d.strip())
         conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
                      "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, text))
     conn.commit()
     return get_settings(conn)
+
+
+def _hours(text: str) -> list[tuple[time, time]]:
+    """'10:00-13:00,16:00-19:30' -> [(10:00, 13:00), (16:00, 19:30)]."""
+    spans = []
+    for part in text.split(","):
+        try:
+            start, end = (time.fromisoformat(t.strip()) for t in part.split("-"))
+        except ValueError:
+            raise ValueError(f"call_hours: {part.strip()!r} is not like 10:00-13:00") from None
+        if start >= end:
+            raise ValueError(f"call_hours: {part.strip()!r} ends before it starts")
+        spans.append((start, end))
+    return spans
+
+
+def calling_time(rules: dict, now: datetime) -> bool:
+    """May an automatic call go out now? Not outside the call hours, on Sundays or festival days."""
+    if now.weekday() == 6 and not rules["call_on_sunday"]:
+        return False
+    if now.date().isoformat() in rules["holidays"].split(","):
+        return False
+    return any(start <= now.time() < end for start, end in _hours(rules["call_hours"]))
 
 
 # ---------- customers ----------
@@ -84,6 +119,9 @@ def customers(conn: sqlite3.Connection) -> list[dict]:
     """Everyone in the ledger or the contact list, with balance, contact and last call."""
     contacts = {r["name"]: dict(r) for r in conn.execute("SELECT * FROM customers")}
     owed = {b["buyer"]: b for b in reminders.balances(conn)}
+    bills: dict[str, list[dict]] = {}
+    for credit in reminders.open_credits(conn):  # oldest first
+        bills.setdefault(credit.buyer, []).append({"amount": credit.amount, "due_date": credit.due_date.isoformat()})
     out = []
     for name in dict.fromkeys([*owed, *contacts]):
         c = contacts.get(name, {})
@@ -98,6 +136,7 @@ def customers(conn: sqlite3.Connection) -> list[dict]:
             "auto_call": bool(c.get("auto_call", 1)),
             "balance": b.get("balance", 0),
             "earliest_due": b.get("earliest_due"),
+            "bills": bills.get(name, []),  # open bills (what is still unpaid of each), oldest first
             "last_call": last,
         })
     return out
@@ -110,6 +149,7 @@ def _call(row: sqlite3.Row | None) -> dict | None:
         return None
     call = dict(row)
     call["transcript"] = json.loads(call["transcript"]) if call["transcript"] else []
+    call["flags"] = json.loads(call["flags"]) if call.get("flags") else []
     return call
 
 
@@ -144,11 +184,14 @@ def set_status(conn: sqlite3.Connection, call_id: int, status: str) -> None:
     conn.commit()
 
 
-def end_live_call(conn: sqlite3.Connection, call_id: int, transcript: list[dict], ok: bool = True) -> None:
-    """The line dropped or someone hung up: keep what was said. Notes are added after (finish_call)."""
-    conn.execute("UPDATE calls SET status = ?, transcript = ?, ended_at = ? WHERE id = ? AND status = 'in_progress'",
+def end_live_call(conn: sqlite3.Connection, call_id: int, transcript: list[dict], ok: bool = True,
+                  flags: list[str] | None = None) -> None:
+    """The line dropped or someone hung up: keep what was said, and anything the checker stopped.
+    Notes are added after (finish_call)."""
+    conn.execute("UPDATE calls SET status = ?, transcript = ?, flags = ?, ended_at = ? "
+                 "WHERE id = ? AND status = 'in_progress'",
                  ("completed" if ok else "failed", json.dumps(transcript, ensure_ascii=False),
-                  datetime.now().isoformat(timespec="seconds"), call_id))
+                  json.dumps(flags or [], ensure_ascii=False), datetime.now().isoformat(timespec="seconds"), call_id))
     conn.commit()
 
 

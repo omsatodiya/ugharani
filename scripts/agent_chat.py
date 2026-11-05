@@ -14,7 +14,9 @@ SETTINGS = {**{k: followup.TYPES.get(k, str)(v) if followup.TYPES.get(k, str) is
                for k, v in followup.DEFAULTS.items()}}
 
 BASE = {"name": "રમેશભાઈ", "firm": "શ્રીજી હાર્ડવેર", "city": "જેતપુર", "deals_with": "મનીષભાઈ",
-        "balance": 120000, "earliest_due": TODAY.isoformat()}
+        "balance": 120000, "earliest_due": TODAY.isoformat(),
+        "bills": [{"amount": 50000, "due_date": TODAY.isoformat()},
+                  {"amount": 70000, "due_date": date.fromordinal(TODAY.toordinal() + 5).isoformat()}]}
 
 # name: (customer overrides, persona for the simulated customer)
 SCENARIOS = {
@@ -29,6 +31,15 @@ SCENARIOS = {
     "robot": ({}, "Suspicious. First asks 'તમે robot છો કે માણસ?'. Then asks the price of 1 inch CPVC tee and "
                   "whether new stock came. Finally says he'll pay next Monday."),
     "angry": ({}, "Irritated: 'રોજ ફોન કરો છો, મેં કીધું ને થઈ જશે'. Doesn't want to talk."),
+    "long": ({}, "Friendly. Says the market is slow and asks to pay the whole amount after 25 days, then "
+                 "asks if he can pay half in 10 days and half after a month."),
+    "statement": ({}, "Wants the account statement and the bank details (IFSC) before paying; asks which bill "
+                      "is pending. Then says he'll pay on Saturday by NEFT."),
+    "hold": ({}, "Answers in a shop: first says 'એક મિનિટ, ગ્રાહક છે' and then, on his next turn, 'હા બોલો, "
+                 "શું હતું?'. Pays on the 10th."),
+    "wrong": ({}, "Is the son, not Rameshbhai. Father has gone to Rajkot, back in the evening."),
+    "english": ({}, "Speaks Gujarati mixed with a lot of English ('payment process ma che, by Monday done "
+                    "thai jashe'). Asks for 3% discount for paying early."),
     "big": ({"balance": 350000, "earliest_due": date.fromordinal(TODAY.toordinal() - 12).isoformat()},
             "Owes a lot, market is slow, asks for 30 more days and a 2% discount for early part payment."),
 }

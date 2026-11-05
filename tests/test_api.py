@@ -6,7 +6,7 @@ from datetime import date, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from ugharani import gnani, main
+from ugharani import followup, gnani, main
 
 
 @pytest.fixture
@@ -225,9 +225,9 @@ def test_auto_run_rings_everyone_due_once(client):
                                   "due_date": date.today().isoformat()})
     client.post("/entries", json={"kind": "credit", "buyer": "કાંતાબેન", "amount": 50000,
                                   "due_date": (date.today() + timedelta(days=9)).isoformat()})
-    rung = client.post("/calls/run").json()
+    rung = client.post("/calls/run", params={"anytime": True}).json()
     assert [(c["customer"], c["trigger"]) for c in rung] == [("રમેશભાઈ", "auto")]
-    assert client.post("/calls/run").json() == []  # already ringing
+    assert client.post("/calls/run", params={"anytime": True}).json() == []  # already ringing
     assert client.post("/calls", json={"customer": "કોઈ નહીં"}).status_code == 404
 
 
@@ -235,3 +235,11 @@ def test_pages_are_revalidated_but_clips_are_not(client):
     assert client.get("/phone.html").headers["cache-control"] == "no-cache"
     assert client.get("/phone.js").headers["cache-control"] == "no-cache"
     assert "no-cache" not in client.get("/audio/0000000000000000.wav").headers.get("cache-control", "")
+
+
+def test_auto_calls_wait_for_the_call_hours(client, monkeypatch):
+    client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
+                                  "due_date": date.today().isoformat()})
+    monkeypatch.setattr(followup, "calling_time", lambda rules, now: False)  # e.g. 2 pm, lunch
+    assert client.post("/calls/run").json() == []
+    assert client.post("/calls", json={"customer": "રમેશભાઈ"}).json()["status"] == "ringing"  # "call now" still works

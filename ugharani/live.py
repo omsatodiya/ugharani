@@ -28,7 +28,7 @@ import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 
-from ugharani import agent, gnani, llm, speech, vad
+from ugharani import agent, gnani, guard, llm, speech, vad
 
 log = logging.getLogger("uvicorn.error")
 
@@ -56,6 +56,7 @@ ECHO_SIMILARITY = 0.6  # share of its letters lining up with her lines: above th
 RESUME_AFTER = 0.6     # paused, they stopped, and Gnani heard no speech: go on this soon (a cough)
 WORDS_WAIT = 2.0       # paused, they stopped, Gnani heard speech: wait this long for its words
 PAUSE_MAX = 8.0        # paused this long and still talking: they have the floor; she stops
+HOLD_WAIT = 60.0       # "એક મિનિટ": she waits this long in silence before "હેલો?"
 
 # Fixed lines: synthesised once, then always played from the cache.
 FILLERS = ["જી,", "હા,", "અચ્છા,"]
@@ -67,7 +68,7 @@ HELLO_SHORT = "હેલો?"
 NO_ANSWER_BYE = "લાગે છે લાઇન બરાબર નથી. હું થોડી વાર પછી ફોન કરું છું. આવજો."
 SORRY = "માફ કરજો, લાઇન થોડી ખરાબ છે. ફરી કહેશો?"
 LINE_DROP_BYE = "માફ કરજો, લાઇનમાં તકલીફ છે. હું પછી ફોન કરું છું. આવજો."
-FIXED_LINES = [*FILLERS, *ACKS, HELLO, HELLO_SHORT, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE]
+FIXED_LINES = [*FILLERS, *ACKS, HELLO, HELLO_SHORT, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE, agent.HOLD]
 
 
 def time_up_bye(settings: dict) -> str:
@@ -177,6 +178,15 @@ def said_yes(text: str) -> bool:
     return bool(words) and words[0] in YES and "ના" not in words
 
 
+HOLD = re.compile(r"(એક|બે|1|2|ek|be)\s*(મિનિટ|મિનીટ|મિનિટે|સેકન્ડ|minute|second)|હોલ્ડ|hold|"
+                  r"[ઊઉ]ભા\s*રહો|[ઊઉ]ભા\s*રે|રુકો|રૂકો|रुको|एक\s*मिनट|ठहरो", re.IGNORECASE)
+
+
+def asks_to_hold(text: str) -> bool:
+    """"એક મિનિટ", "હોલ્ડ કરો", "એક મિનિટ, હું બિલ જોઈ લઉં": they'll be back; not something to answer."""
+    return len(_words(text)) <= 7 and bool(HOLD.search(text))
+
+
 def is_backchannel(text: str) -> bool:
     """One or two listening words ("હા", "હા હા", "હા જી"), not something to answer."""
     words = _words(text)
@@ -212,6 +222,7 @@ class LiveCall:
         self._lead = 0.0  # at the customer's speech_start: how much of her audio was left (<0: she'd stopped)
         self._again = False  # the customer spoke again while a reply was already being spoken
         self._prompted = False  # said "hello?" since the customer last spoke
+        self._hold_until = 0.0  # asked her to hold ("એક મિનિટ"): no "hello?" before then
         self._ending = False
         self._carry = b""
         self._fetches: set[asyncio.Task] = set()  # audio being fetched ahead of playing
@@ -226,6 +237,7 @@ class LiveCall:
         self._unpaused = asyncio.Event()
         self._unpaused.set()
         self._pause_watch: asyncio.Task | None = None
+        self.flags: list[str] = []  # sentences the checker stopped (the owner is told)
         self.pauses: list[str] = []  # how each pause ended: resumed / interrupted (logged, tested)
         self._cut_unheard: list[dict] | None = None  # set by an interruption for the reply being cut
         self.stt_events: dict[str, int] = {}  # what Gnani sent, counted (logged at the end)
@@ -389,6 +401,14 @@ class LiveCall:
                     hang |= end
                     if not text:
                         continue
+                    if why := guard.problem(text, self.settings, self.customer, convo, self.today):
+                        # Outside the owner's limits: never said. A hand-over instead, and the rest
+                        # of this reply is dropped (it would follow from what she didn't say).
+                        log.warning("call: checker stopped a sentence: %s", why)
+                        self.flags.append(why)
+                        text, hang = guard.instead(self.settings, self.customer), False
+                        await ready.put((text, self._fetch(text)))
+                        break
                     if after_lead_in:  # "...રેકોર્ડ થાય છે હં. જી. તમારું..." would stutter
                         after_lead_in = False
                         if text in ACKS:
@@ -695,8 +715,14 @@ class LiveCall:
                     await self._resume("she had finished")
             self._last_heard = self._now()
             self._prompted = False
+            self._hold_until = 0.0
             self._add("customer", text)
             await self._send_event({"type": "line", "who": "customer", "text": text})
+            if self._stage == "talk" and asks_to_hold(text):
+                log.info("call: asked to hold: %s", text)
+                self._hold_until = self._now() + HOLD_WAIT
+                self._start_fixed_reply(agent.HOLD)  # at once, from a clip: no need to ask Gemini
+                return
             self._start_reply()  # (during the greeting, its answer is handled by _greet)
         elif kind == "error":
             log.warning("call: STT error: %s", event.get("message"))
@@ -735,6 +761,20 @@ class LiveCall:
         self._last_heard = self._now()
         self._turn = asyncio.create_task(self._reply(lead_in=agent.intro(self.settings, said_yes(last))))
 
+    def _start_fixed_reply(self, line: str) -> None:
+        if self._turn and not self._turn.done():
+            if self._turn_spoke:
+                self._again = True  # (the reply being said finishes; Gemini then answers the hold)
+                return
+            self._turn.cancel()
+
+        async def run():
+            self._turn_spoke = True
+            self._add("agent", line)
+            await self.say(line)
+
+        self._turn = asyncio.create_task(run())
+
     def _start_reply(self) -> None:
         if self._stage != "talk":
             return  # the greeting is still going: its answer is handled there
@@ -747,7 +787,7 @@ class LiveCall:
             busy = (self._turn and not self._turn.done()) or self.speaking() or self._heard_at or self._voice.active
             if self._now() - self._started > MAX_CALL and not (self._turn and not self._turn.done()):
                 await self.hang_up("time_up", time_up_bye(self.settings))
-            elif not busy and self._now() - max(self._last_heard, self._speaking_until) > NO_REPLY:
+            elif not busy and self._now() - max(self._last_heard, self._speaking_until, self._hold_until) > NO_REPLY:
                 if self._prompted:
                     await self.hang_up("no_answer", NO_ANSWER_BYE)
                 else:
@@ -797,7 +837,7 @@ class LiveCall:
 async def warm_up(settings: dict, customer: dict) -> None:
     """Synthesise the opening and fixed lines while the phone rings, so answering is instant."""
     for text in [agent.greeting(customer), agent.intro(settings, True), agent.intro(settings, False),
-                 *FIXED_LINES]:
+                 guard.instead(settings, customer), *FIXED_LINES]:
         try:
             await speech.speak(text)
         except gnani.GnaniError as e:

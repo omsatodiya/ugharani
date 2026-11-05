@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS calls (
     summary         TEXT,
     transcript      TEXT,              -- JSON list of {"who": "agent"|"customer", "text": ...}
     recording       TEXT,              -- file name in the recordings dir
+    flags           TEXT,              -- JSON list: what the agent's checker stopped her saying, for the owner
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at        TEXT
 );
@@ -62,6 +63,8 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.executescript(SCHEMA)
+    if "flags" not in {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}:  # (older databases)
+        conn.execute("ALTER TABLE calls ADD COLUMN flags TEXT")
     return conn
 
 

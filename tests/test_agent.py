@@ -28,9 +28,14 @@ def test_the_opening_is_two_turns_like_a_person_calling(settings):
 def test_prompt_carries_dues_contacts_and_rules(settings):
     p = agent.system_prompt(settings, CUSTOMER, TODAY)
     assert "₹1,20,000" in p and "due today" in p and "મનીષભાઈ" in p and "શ્રીજી હાર્ડવેર" in p
-    assert "large amount" not in p  # under ₹2,00,000
-    big = agent.system_prompt(settings, {**CUSTOMER, "balance": 350000, "earliest_due": "2026-10-20"}, TODAY)
-    assert "large amount" in big and "12 days ago" in big
+    overdue = agent.system_prompt(settings, {**CUSTOMER, "earliest_due": "2026-10-20"}, TODAY)
+    assert "12 days ago" in overdue
+    # her limits, as dates: 7 days for the whole payment, 15 for the last part
+    assert "up to 8 નવેમ્બર" in p and "comes by 16 નવેમ્બર" in p
+    assert "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." in p and "WhatsApp" in p
+    bills = [{"amount": 50000, "due_date": "2026-10-20"}, {"amount": 70000, "due_date": "2026-11-01"}]
+    assert "₹50,000 (due 20 ઑક્ટોબર), ₹70,000 (due 1 નવેમ્બર)" in agent.system_prompt(
+        settings, {**CUSTOMER, "bills": bills}, TODAY)
 
 
 def test_prompt_mentions_a_broken_promise(settings):

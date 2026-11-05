@@ -89,6 +89,35 @@ Found by the browser check (`fake_voice_server.py` writes `out/fake_mic.wav`, th
 customer as sound, for Chrome's fake mic): words begun as the intro ended paused her reply, but
 were then taken as "said over the intro" and she resumed. Paused now always means stop for words.
 
+## Staying within the owner's limits (Nov 5)
+
+The owner's rules are settings (`followup.DEFAULTS`): a date for the whole payment at most
+`promise_days` (7) ahead; part payments only if the last part comes within `split_days` (15).
+The prompt states them as dates ("up to 12 નવેમ્બર"), not as rules Gemini has to work out.
+
+A prompt can still slip, so `ugharani/guard.py` checks every sentence **in code** before it is
+synthesised. It is never said if it:
+- brings up a discount, interest or penalty, legal action, stopping supply, or a rate, unless it
+  is handing that topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે")
+- names an amount that is not the balance, an open bill, something the customer said
+  ("60 હજાર", "દોઢ લાખ" too) or what is left after it
+- names a date past the 15-day limit ("25 તારીખે", "2 ડિસેમ્બરે", "30 દિવસમાં")
+
+In its place she says "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." (a bundled clip), the
+rest of that reply is dropped, and the reason is saved on the call (`calls.flags`) for the owner.
+
+Also new in the prompt: the open bills ("which bill?"), statement and bank details promised on
+WhatsApp (an owner task in the notes), dues kept private when someone else answers, an honest
+answer to "are you a robot?", one try within the limits before handing over, never the same
+sentence twice. "એક મિનિટ" / "હોલ્ડ કરો" is handled in code: an instant "હા જી, વાંધો નહીં." and up
+to 60 s of silence before "હેલો?". Automatic calls go out only in the call hours (10-1, 4-7:30),
+not on Sundays or the owner's festival days; "call now" works any time.
+
+`scripts/agent_chat.py` scenarios (Gemini plays the customer, free): promise, paid, dispute,
+hindi, robot, angry, big, long (asks for 25 days / half after a month), statement, hold, wrong
+(the son answers), english (mixed, asks a discount). Found and fixed with them: the dues told to
+the son, "તમારા વતી" in the robot answer, "the rest after a month" accepted silently.
+
 ## Hindi and mixed speech, Nov 3
 
 Customers in Saurashtra answer in Gujarati, Hindi, or a mix with English trade words. Gnani's

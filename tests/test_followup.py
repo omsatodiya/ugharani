@@ -118,3 +118,26 @@ def test_finished_call_keeps_the_notes(conn):
     assert call["transcript"][0]["text"] == "આવતા સોમવારે"
     with pytest.raises(ValueError):
         followup.finish_call(conn, call_id, transcript=[], outcome="threatened", summary="")
+
+
+def test_calls_go_out_only_in_the_call_hours(conn):
+    rules = followup.get_settings(conn)
+    wed = datetime(2026, 11, 4)
+    at = lambda h, m=0, day=wed: followup.calling_time(rules, day.replace(hour=h, minute=m))
+    assert at(10) and at(12, 59) and at(16) and at(19, 29)
+    assert not at(9, 59) and not at(13) and not at(14, 30) and not at(19, 30) and not at(21)
+    assert not at(11, day=datetime(2026, 11, 8))  # Sunday
+    rules = followup.update_settings(conn, {"holidays": "2026-11-04, 2026-11-10"})
+    assert rules["holidays"] == "2026-11-04,2026-11-10" and not followup.calling_time(rules, wed.replace(hour=11))
+    with pytest.raises(ValueError):
+        followup.update_settings(conn, {"call_hours": "10-1"})
+    with pytest.raises(ValueError):
+        followup.update_settings(conn, {"holidays": "Diwali"})
+
+
+def test_customers_carry_their_open_bills(conn):
+    today = date(2026, 11, 4)
+    for text in ["રમેશભાઈને 50000 નો માલ 30 દિવસ", "રમેશભાઈને 70000 નો માલ 45 દિવસ", "રમેશભાઈએ 20000 આપ્યા"]:
+        db.add_entry(conn, parse(text, today), text, today)
+    ramesh = next(c for c in followup.customers(conn) if c["name"] == "રમેશભાઈ")
+    assert [b["amount"] for b in ramesh["bills"]] == [30000, 70000]  # paid against the oldest first

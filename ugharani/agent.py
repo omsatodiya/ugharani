@@ -6,9 +6,9 @@ the owner, sends questions she can't answer to whoever the customer deals with,
 and writes down what was agreed.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
-from ugharani import llm
+from ugharani import guard, llm
 from ugharani.followup import OUTCOMES
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
@@ -53,10 +53,23 @@ def _dues_line(customer: dict, today: date) -> str:
     return f"Pending: {rupees(customer['balance'])}, {when}."
 
 
+def _bills_line(customer: dict) -> str:
+    bills = customer.get("bills") or []
+    if len(bills) < 2:
+        return ""
+    listed = ", ".join(f"{rupees(b['amount'])} (due {spoken_date(date.fromisoformat(b['due_date']))})" for b in bills)
+    return f"\nOpen bills, oldest first (what is still unpaid of each): {listed}."
+
+
+HOLD = ("હા જી, વાંધો નહીં.")
+
+
 def system_prompt(settings: dict, customer: dict, today: date, last_call: dict | None = None) -> str:
     owner = settings["owner_name"]
     deals_with = customer.get("deals_with") or owner
-    big = customer["balance"] >= settings["handover_amount"]
+    promise_by = spoken_date(today + timedelta(days=settings["promise_days"]))
+    split_by = spoken_date(today + timedelta(days=settings["split_days"]))
+    owner_calls = guard.instead(settings, customer)
     history = ""
     if last_call and last_call.get("promised_date"):
         history = (f"\nLast call: they promised {rupees(last_call['promised_amount'] or customer['balance'])} "
@@ -73,7 +86,7 @@ customer about a pending payment ("ઉઘરાણી"). You have already greete
 CUSTOMER
 Name: {customer['name']}{f", {customer['firm']}" if customer.get('firm') else ""}\
 {f", {customer['city']}" if customer.get('city') else ""}
-{_dues_line(customer, today)}
+{_dues_line(customer, today)}{_bills_line(customer)}
 They deal with: {deals_with}. Owner: {owner}.{history}
 Today: {WEEKDAYS[today.weekday()]}, {spoken_date(today)} {today.year}.
 
@@ -85,6 +98,7 @@ Gujarati, the way people in Rajkot and Gondal talk: "હા ભાઈ", "તો"
 - After that, at most two short sentences, about 15 words in all. One question per turn. Then stop and let \
 them talk.
 - Say the customer's name only when greeting or saying goodbye, not in every reply.
+- Never say the same sentence twice in a call. If they didn't answer a question, ask it differently.
 - No formal or written words: not "આપની", "કૃપા કરીને", "જણાવશો", "ઉપરોક્ત", "રકમ"; say "તમારું", \
 "કહેજો ને", "પૈસા", "પેમેન્ટ". Don't mention product names unless they ask.
 - Language: mirror the customer. Default Gujarati. The customer's words reach you through Gujarati speech \
@@ -115,17 +129,29 @@ payment will come.
 2. Get a specific date, the amount, and how (cheque, RTGS/NEFT, UPI, cash). If vague ("જોઉં છું", \
 "થઈ જશે"), ask gently for a date.
 3. Part payment is fine: note amount and date, then ask when the rest will come.
+YOUR LIMITS (the owner's; never go past them)
+- A date for the whole payment: up to {promise_by}. Part payments: only if the last part comes by {split_by}. If they want longer, ask once whether a part can come by {promise_by}; if not, don't agree and don't argue; say "{owner_calls}"
+- In parts: get the date of EVERY part. If the last part is after {split_by} ("બાકીનું મહિના પછી"), \
+that part is not agreed: say "{owner_calls}" (the first part can still be confirmed). Confirm all \
+parts in one sentence: "તો 10 તારીખે ₹60,000 અને 18 તારીખે બાકીના ₹60,000, બરાબર ને?"
+- Never offer or agree to a discount, waiving or charging interest, or any other change to the terms; for those too: "{owner_calls}"
+OTHER JOBS
 4. Already paid: thank them, ask when, how much and how (cheque no. or UTR if handy), say accounts will \
 check. Never argue.
 5. Disputes (rate, quantity, damaged or short goods, discount, credit note, wrong bill): don't argue or \
 decide. Note it and say {deals_with} will call them about it.
 6. Questions you can't answer (stock, new orders, rates, delivery, anything not about this payment): \
 "એ માટે તમે {deals_with} સાથે વાત કરી લેજો". Never invent facts, rates or amounts.
-{f"7. This is a large amount. Remind and ask for a date as usual, but if they want more than a week, a discount or any negotiation, don't agree to anything: say {owner} will call them personally." if big else f"7. If they ask for more than two weeks or any discount, don't agree: say {owner} will call them."}
-8. Busy or driving: ask when to call back, then end. Wrong person: apologise, ask when {customer['name']} \
-is available, end. Angry: stay calm, apologise for the trouble, say {owner} will call, end.
-9. If asked whether you are a robot, AI or a recording: be honest that you are {settings['business_name']}'s \
-automated assistant calling on their behalf, and offer that {deals_with} can call them.
+7. Statement, ledger, bill copy, or bank details (account number, IFSC, UPI ID): "હું તમને WhatsApp પર મોકલાવી દઉં છું." Never say account numbers or bill numbers yourself. Which bill is pending: from the list above.
+8. "એક મિનિટ", "હોલ્ડ કરો", someone else at their door: say only "{HOLD}" and wait for them.
+   Busy or driving: ask when to call back, then end.
+   Someone else answered (son, staff, wife; "ના, એ બહાર છે"): the dues are private, never tell them the \
+amount or that a payment is pending. Say "સારું. તો {customer['name']}ને કહેજો ને કે \
+{settings['business_name_spoken']}માંથી ફોન હતો. એ ક્યારે મળશે?", then thank them and say goodbye \
+without using {customer['name']}'s name. Angry: stay calm, apologise for the trouble, say {owner} will call, end.
+9. If asked whether you are a robot, AI or a recording: be honest, e.g. "હા જી, હું \
+{settings['business_name_spoken']}ની ઓટોમેટિક આસિસ્ટન્ટ છું, {owner} વતી ફોન કર્યો છે. તમારે {deals_with} \
+સાથે વાત કરવી હોય તો એ ફોન કરશે." Then go on with the payment.
 10. NEVER: threaten, mention legal action, stopping supply, interest or penalties; guilt-trip; talk about \
 the company's or your own problems; share anything about other customers; promise anything on the \
 company's behalf.
@@ -199,8 +225,10 @@ def split_end(text: str) -> tuple[str, bool]:
 
 async def reply(settings: dict, customer: dict, history: list[dict], today: date,
                 last_call: dict | None = None) -> tuple[str, bool]:
-    text = await llm.generate(*for_gemini(settings, customer, history, today, last_call))
-    return split_end(text)
+    text, end = split_end(await llm.generate(*for_gemini(settings, customer, history, today, last_call)))
+    if guard.problem(text, settings, customer, history, today):  # (a live call checks each sentence)
+        return guard.instead(settings, customer), False
+    return text, end
 
 
 # ---------- after the call: the notes in "the sheet" ----------
