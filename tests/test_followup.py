@@ -141,3 +141,9 @@ def test_customers_carry_their_open_bills(conn):
         db.add_entry(conn, parse(text, today), text, today)
     ramesh = next(c for c in followup.customers(conn) if c["name"] == "રમેશભાઈ")
     assert [b["amount"] for b in ramesh["bills"]] == [30000, 70000]  # paid against the oldest first
+
+
+def test_part_payments_may_not_end_sooner_than_a_whole_one(conn):
+    with pytest.raises(ValueError):
+        followup.update_settings(conn, {"promise_days": 20})  # (split_days is 15)
+    assert followup.update_settings(conn, {"promise_days": 20, "split_days": 30})["split_days"] == 30

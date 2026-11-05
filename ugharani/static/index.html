@@ -74,6 +74,28 @@
       <ul class="items calls" id="call-log"></ul>
     </section>
 
+    <section class="card" id="rules">
+      <details>
+        <summary class="card-head"><h2>કાવ્યાના નિયમો <small>Kavya's rules</small></h2></summary>
+        <p class="why" id="rules-say"></p>
+        <form id="rules-form" class="rules">
+          <label>આખું પેમેન્ટ, વધુમાં વધુ <small>Whole payment within</small>
+            <span><input type="number" name="promise_days" min="1" max="60" required> દિવસ</span></label>
+          <label>ભાગમાં, છેલ્લો ભાગ <small>Last part within</small>
+            <span><input type="number" name="split_days" min="1" max="90" required> દિવસ</span></label>
+          <label>ફોનનો સમય <small>Call hours</small>
+            <input type="text" name="call_hours" required pattern="[0-9:, -]+"></label>
+          <label>તહેવાર, ફોન નહીં <small>Festival days (YYYY-MM-DD, …)</small>
+            <input type="text" name="holidays" placeholder="2026-11-08, 2026-11-10"></label>
+          <label class="check"><input type="checkbox" name="call_on_sunday"> રવિવારે પણ ફોન <small>Call on Sundays</small></label>
+          <label class="check"><input type="checkbox" name="auto_calls"> ઓટો ફોન ચાલુ <small>Automatic calls on</small></label>
+          <label>રીત <small>Tone</small>
+            <select name="tone"><option value="gentle">નરમ · Gentle</option><option value="firm">મક્કમ · Firm</option></select></label>
+          <button class="btn primary" type="submit">સાચવો <small>Save</small></button>
+        </form>
+      </details>
+    </section>
+
     <section class="card" id="ledger">
       <div class="card-head">
         <h2>ખાતાવહી <small>Balances</small></h2>

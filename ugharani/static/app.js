@@ -447,6 +447,45 @@ async function refreshCalls() {
   callsTimer = setTimeout(refreshCalls, active ? 3000 : 20000);
 }
 
+// ---------- the owner's rules for Kavya ----------
+
+const RULE_KEYS = ["promise_days", "split_days", "call_hours", "holidays", "call_on_sunday", "auto_calls", "tone"];
+
+function rulesSay(r) {
+  return `કાવ્યા આખા પેમેન્ટ માટે ${r.promise_days} દિવસ સુધીનો વાયદો, અને ભાગમાં છેલ્લો ભાગ ${r.split_days} દિવસમાં હોય તો હા પાડે. ` +
+    `ડિસ્કાઉન્ટ, વ્યાજ કે લાંબી મુદત: "${r.owner_name} તમને ફોન કરશે." · She agrees to these on her own; anything more comes to you.`;
+}
+
+async function loadRules() {
+  const r = await api("/settings");
+  const form = $("rules-form");
+  for (const k of RULE_KEYS) {
+    const input = form.elements[k];
+    if (input.type === "checkbox") input.checked = !!r[k];
+    else input.value = r[k];
+  }
+  $("rules-say").textContent = rulesSay(r);
+}
+
+async function saveRules(e) {
+  e.preventDefault();
+  const form = $("rules-form");
+  const changes = {};
+  for (const k of RULE_KEYS) {
+    const input = form.elements[k];
+    changes[k] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
+  }
+  try {
+    const r = await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+                                       body: JSON.stringify(changes) });
+    $("rules-say").textContent = rulesSay(r);
+    toast("નિયમો સચવાયા · Rules saved");
+    refreshCalls();
+  } catch (err) {
+    toast(`ભૂલ · ${err.message}`);
+  }
+}
+
 // ---------- start ----------
 
 function init() {
@@ -460,6 +499,8 @@ function init() {
     refreshCalls();
   });
   $("run-calls").addEventListener("click", runCalls);
+  $("rules-form").addEventListener("submit", saveRules);
+  loadRules().catch(() => {});
   $("mic").addEventListener("click", onMic);
   $("save").addEventListener("click", onSave);
   $("cancel").addEventListener("click", clearConvo);

@@ -52,6 +52,9 @@ def get_settings(conn: sqlite3.Connection) -> dict:
 
 def update_settings(conn: sqlite3.Connection, changes: dict) -> dict:
     """Validate and save the owner's changes; unknown keys are rejected."""
+    merged = {**get_settings(conn), **changes}
+    if int(merged["split_days"]) < int(merged["promise_days"]):
+        raise ValueError("split_days can't be less than promise_days")
     for key, value in changes.items():
         if key not in DEFAULTS:
             raise ValueError(f"unknown setting {key!r}")

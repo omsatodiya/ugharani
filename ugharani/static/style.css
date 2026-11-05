@@ -142,6 +142,19 @@ h2 { margin: 0; font-size: 19px; }
 .calls .turn b { color: var(--muted); font-weight: 600; }
 .why { color: var(--muted); font-size: 14px; }
 
+#rules summary { list-style: none; cursor: pointer; }
+#rules summary::-webkit-details-marker { display: none; }
+#rules summary h2::after { content: " ▾"; color: var(--muted); font-size: 14px; }
+.rules { display: grid; gap: 12px; margin-top: 12px; }
+.rules label { display: grid; gap: 4px; font-size: 15px; }
+.rules label.check { display: flex; align-items: center; gap: 8px; }
+.rules input[type="number"] { width: 5em; }
+.rules input, .rules select {
+  font: inherit; font-size: 16px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+}
+.rules input[type="checkbox"] { width: 20px; height: 20px; }
+
 .foot { text-align: center; color: var(--muted); font-size: 12px; margin: 20px 0; }
 
 .dock {
