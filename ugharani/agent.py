@@ -260,7 +260,7 @@ promised_amount: rupees they promised (or say they paid), else null; if paying i
 only, with its date (the summary mentions the rest). promised_date: resolve words like \
 "સોમવારે", "આવતા અઠવાડિયે" (take its Monday) or "15 તારીખે" to YYYY-MM-DD from today, else null.
 summary: what happened, in plain Gujarati, as an office staff member would note it. Digits 0-9 only.
-owner_action: only if the owner or the person they deal with must do something."""
+owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time asked by someone else who answered goes here too."""
 
 
 async def notes(settings: dict, customer: dict, history: list[dict], today: date) -> dict:

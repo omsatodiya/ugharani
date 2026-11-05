@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from ugharani import db, followup, gnani, live, llm, reminders, speech
+from ugharani import agent, db, followup, gnani, live, llm, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
 
@@ -354,6 +354,28 @@ def call_status(call_id: int, change: CallStatus) -> dict:
 
 
 _live_calls: set[int] = set()
+_notes_tasks: set[asyncio.Task] = set()  # notes being written after calls (kept so they finish)
+
+
+async def write_notes(call_id: int, rules: dict, customer: dict, history: list[dict]) -> None:
+    """After a live call: the owner's notes (outcome, promise, what they must do), like the staff
+    member writing them in the sheet. A Gemini failure leaves the call saved without notes."""
+    try:
+        n = await agent.notes(rules, customer, history, date.today())
+    except llm.LLMError as e:
+        log.warning("call %s: notes failed: %s", call_id, e)
+        return
+    conn = db.connect()
+    try:
+        call = followup.get_call(conn, call_id)
+        followup.finish_call(
+            conn, call_id, transcript=call["transcript"], outcome=n["outcome"], summary=n["summary"],
+            promised_amount=n.get("promised_amount"),
+            promised_date=date.fromisoformat(n["promised_date"]) if n.get("promised_date") else None,
+            owner_action=n.get("owner_action"), payment_mode=n.get("payment_mode"))
+    finally:
+        conn.close()
+    log.info("call %s notes: %s, %s", call_id, n["outcome"], n["summary"])
 
 
 def max_live_calls() -> int:
@@ -418,6 +440,10 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
             followup.end_live_call(conn, call_id, session.history, ok=bool(session.history), flags=session.flags)
         finally:
             conn.close()
+        if any(h["who"] == "customer" for h in session.history):
+            task = asyncio.create_task(write_notes(call_id, rules, customer, list(session.history)))
+            _notes_tasks.add(task)
+            task.add_done_callback(_notes_tasks.discard)
         try:
             await ws.close()
         except (RuntimeError, WebSocketDisconnect):

@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS calls (
     transcript      TEXT,              -- JSON list of {"who": "agent"|"customer", "text": ...}
     recording       TEXT,              -- file name in the recordings dir
     flags           TEXT,              -- JSON list: what the agent's checker stopped her saying, for the owner
+    owner_action    TEXT,              -- what the owner must do after the call (from the notes), if anything
+    payment_mode    TEXT,              -- how they said they'll pay: RTGS, cheque, UPI, cash...
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at        TEXT
 );
@@ -63,8 +65,10 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.executescript(SCHEMA)
-    if "flags" not in {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}:  # (older databases)
-        conn.execute("ALTER TABLE calls ADD COLUMN flags TEXT")
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}
+    for column in ("flags", "owner_action", "payment_mode"):  # (older databases)
+        if column not in have:
+            conn.execute(f"ALTER TABLE calls ADD COLUMN {column} TEXT")
     return conn
 
 

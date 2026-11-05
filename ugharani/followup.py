@@ -197,15 +197,17 @@ def end_live_call(conn: sqlite3.Connection, call_id: int, transcript: list[dict]
 
 def finish_call(conn: sqlite3.Connection, call_id: int, *, transcript: list[dict], outcome: str,
                 summary: str, promised_amount: int | None = None, promised_date: date | None = None,
-                recording: str | None = None) -> None:
+                recording: str | None = None, owner_action: str | None = None,
+                payment_mode: str | None = None) -> None:
     """Store what the call achieved: the agent's notes in 'the sheet'."""
     if outcome not in OUTCOMES:
         raise ValueError(f"unknown outcome {outcome!r}")
     conn.execute(
         """UPDATE calls SET status = 'completed', outcome = ?, summary = ?, transcript = ?,
-               promised_amount = ?, promised_date = ?, recording = ?, ended_at = ? WHERE id = ?""",
+               promised_amount = ?, promised_date = ?, recording = ?, owner_action = ?, payment_mode = ?,
+               ended_at = COALESCE(ended_at, ?) WHERE id = ?""",
         (outcome, summary, json.dumps(transcript, ensure_ascii=False), promised_amount,
-         promised_date.isoformat() if promised_date else None, recording,
+         promised_date.isoformat() if promised_date else None, recording, owner_action, payment_mode,
          datetime.now().isoformat(timespec="seconds"), call_id),
     )
     conn.commit()

@@ -76,6 +76,15 @@ def phone(tmp_path, monkeypatch):
     monkeypatch.setattr(gnani, "synthesize", synthesize)
     monkeypatch.setattr(gnani, "live_stt", live_stt)
     monkeypatch.setattr(llm, "stream", stream)
+
+    async def generate_json(system, history, schema):  # the notes after a call
+        rec["notes_asked"].append(history[0]["text"])
+        return rec["notes"]
+
+    rec["notes_asked"] = []
+    rec["notes"] = {"outcome": "promised", "summary": "10 તારીખે RTGS કરશે.", "promised_amount": 100000,
+                    "promised_date": "2026-11-10", "payment_mode": "RTGS", "owner_action": None}
+    monkeypatch.setattr(llm, "generate_json", generate_json)
     for name, value in {"GREETING_WAIT": 0.05, "GREETING_REPLY": 0.3, "FILLER_AFTER": 5, "NO_REPLY": 5, "AFTER_LAST_WORD": 0,
                         "ECHO_MARGIN": 0.5, "ECHO_DELAY": 0.05}.items():  # (fake audio is 0.1 s)
         monkeypatch.setattr(live, name, value)
@@ -1010,3 +1019,53 @@ def test_an_overloaded_model_falls_back_for_the_notes_too(monkeypatch):
     _gemini(monkeypatch, handler)
     assert asyncio.run(llm.generate("sys", [])) == "ok"
     assert tried == [llm.model(), llm.fallback_model()]
+
+
+
+def _saved(client, call_id, key, seconds=3.0):
+    """The call as saved, once `key` is filled in (the notes are written just after the call)."""
+    deadline = time.monotonic() + seconds
+    while True:
+        call = client.get(f"/calls/{call_id}").json()
+        if call.get(key) or time.monotonic() > deadline:
+            return call
+        time.sleep(0.05)
+
+
+def test_the_notes_are_written_after_the_call(phone):
+    client, call_id, rec = phone
+    rec["notes"] = {**rec["notes"], "owner_action": "WhatsApp પર સ્ટેટમેન્ટ મોકલવું"}
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?", "સારું, આભાર. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "10 તારીખે RTGS, સ્ટેટમેન્ટ મોકલજો")
+        until(ws, {"type": "end"})
+    call = _saved(client, call_id, "outcome")
+    assert call["outcome"] == "promised" and call["promised_date"] == "2026-11-10"
+    assert call["owner_action"] == "WhatsApp પર સ્ટેટમેન્ટ મોકલવું" and call["payment_mode"] == "RTGS"
+    assert call["status"] == "completed" and len(call["transcript"]) == 5  # (kept as said)
+    assert "Customer: 10 તારીખે RTGS, સ્ટેટમેન્ટ મોકલજો" in rec["notes_asked"][0]
+
+
+def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monkeypatch):
+    client, call_id, rec = phone
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"type": "end"})  # silence throughout
+    assert rec["notes_asked"] == [] and client.get(f"/calls/{call_id}").json()["outcome"] is None
+
+    async def broken(*a):
+        raise llm.LLMError("503")
+
+    monkeypatch.setattr(llm, "generate_json", broken)
+    call = client.post("/calls", json={"customer": "રમેશભાઈ"}).json()
+    client.post(f"/calls/{call['id']}/status", json={"status": "in_progress"})
+    with client.websocket_connect(f"/calls/{call['id']}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"type": "end"})
+    time.sleep(0.3)
+    saved = client.get(f"/calls/{call['id']}").json()
+    assert saved["status"] == "completed" and saved["transcript"] and saved["outcome"] is None
