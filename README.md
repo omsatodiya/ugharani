@@ -1,9 +1,62 @@
-# Ugharani
+# Ugharani: auto ઉઘરાણી
 
-A Gujarati/Hinglish voice credit ledger for Surat traders. A trader calls in and says
-something like *"Rameshbhai ne be lakh chaalis hazaar nu maal aapyu, saath divas"*, and
-Ugharani records the buyer, amount and due date. Later it sends payment reminders as calls or voice notes.
-Built on Gnani's **Prisma v2.5** (speech-to-text) and **Timbre v3.0** (text-to-speech).
+Every Gujarat trader who sells on credit pays someone to phone dealers about pending payments
+("ઉઘરાણી"). Ugharani is that person as a voice agent: **કાવ્યા** from Genius Polyplast, Gondal
+calls the dealer, talks like a Saurashtra office girl on the phone (Gujarati, or Hindi if they
+speak Hindi), gets a date, an amount and how they'll pay, and writes the owner's notes. She stays
+inside the owner's limits: anything more ("30 દિવસ", a discount) goes to the owner.
+
+Built on Gnani **Prisma v3** (live Gujarati speech to text) and **Timbre** (Tarika's voice), with
+Gemini (free tier) writing her replies. Live demo: https://ugharani.onrender.com
+
+## Try it in 2 minutes
+
+1. On a laptop open https://ugharani.onrender.com: the owner's app (dues, calls, notes, rules).
+2. On a phone open https://ugharani.onrender.com/phone.html, pick **રમેશભાઈ**, tap once (allows
+   sound and the mic). The phone page stands in for the dealer's phone line.
+3. Tap **આ ફોન પર કૉલ કરાવો** (or **ફોન કરો** in the owner's app). The phone rings; answer it.
+4. Talk to her. Try: "હા બોલો", "એક મિનિટ", "શુક્રવારે આપી દઈશ", "થોડું ડિસ્કાઉન્ટ આપો",
+   cutting in while she talks, or Hindi.
+5. Hang up (or let her say goodbye). The owner's app shows the outcome, promise, notes, and
+   anything the owner must do.
+
+(Render's free server sleeps: the first load can take ~50 s.)
+
+## How a call works
+
+```
+phone page (mic, 16 kHz PCM) ──websocket──▶ server ──▶ Gnani live STT (gu-IN) ──▶ transcript
+     ▲                                        │  own speech detector: pause her in ~0.25 s
+     │                                        ▼
+     └──── her voice, sentence by sentence ◀── Timbre ◀── checker ◀── Gemini (streamed)
+```
+
+What makes it sound like a person (details in `docs/live-calls.md`):
+- **Opening like a real call**: "હેલો રમેશભાઈ?", waits for their "હા", then who she is (with the
+  recording notice said in passing).
+- **Fast turns**: replies are streamed and spoken sentence by sentence; short acknowledgements
+  ("જી.", "સારું.") and fillers play from bundled clips at once; Timbre's padded silences are cut.
+- **Talked over**: she pauses within ~0.25 s; "હા"/"હં", a cough or her own echo let her go on
+  from where she stopped; real words stop her, and Gemini is told what was actually heard.
+- **Holding**: "એક મિનિટ" gets "હા જી, વાંધો નહીં." and up to a minute of patience.
+- **Hindi**: answered in simple Hindi. **Silence**: "હેલો? સાંભળાય છે?", then a polite goodbye.
+
+What keeps it safe for the business:
+- The owner's limits (whole payment within 7 days, part payments only if all is in by 15 days)
+  are settings, shown to her as dates. **Every sentence is checked in code** before it's spoken
+  (`ugharani/guard.py`): discounts, interest, threats, rates, amounts on no bill and dates past
+  the limit are never said; she hands over to the owner instead and the owner is told.
+- Dues are never told to someone else who answers; "are you a robot?" gets an honest answer.
+- Automatic calls only in the call hours (10-1, 4-7:30), not on Sundays or festival days.
+- After the call: outcome, promised date and amount, payment mode, owner's to-do (callback,
+  dispute, statement on WhatsApp), saved with the transcript.
+
+Tests: `uv run pytest` (164 tests: calls with Gnani and Gemini faked, the checker, the rules),
+`scripts/browser_check.py` (the real phone page in headless Chrome against a fake Gnani, with a
+scripted mic that cuts in and coughs), `scripts/agent_chat.py` (Gemini plays tricky customers,
+free), `scripts/live_call.py` (a real call, a second Timbre voice as the customer; uses credits).
+
+The app also keeps the trader's credit ledger by voice (below): that's where the dues come from.
 
 ## Setup
 
