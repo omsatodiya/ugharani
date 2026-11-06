@@ -328,6 +328,16 @@ const REASON = { overdue: "મુદત વીતી", due_today: "આજે મ
 let callsTimer;
 let hours = null;
 
+// The owner's demo key (?k=... once): calls made with it don't count against the public budget.
+const ownerKey = (() => {
+  const k = new URLSearchParams(location.search).get("k");
+  try {
+    if (k) localStorage.setItem("ugharani-key", k);
+    return k || localStorage.getItem("ugharani-key");
+  } catch { return k; }
+})();
+const withKey = (path) => (ownerKey ? `${path}${path.includes("?") ? "&" : "?"}k=${encodeURIComponent(ownerKey)}` : path);
+
 function when(iso) {
   return new Date(iso).toLocaleString("gu-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
@@ -338,14 +348,14 @@ function chip([label, kind]) {
 
 function phoneLink(name) {
   // The demo's stand-in for the customer's phone: open it (on another device) to take the call.
-  return el("a", { class: "btn small", href: `/phone.html?c=${encodeURIComponent(name)}`, target: "_blank",
+  return el("a", { class: "btn small", href: withKey(`/phone.html?c=${encodeURIComponent(name)}`), target: "_blank",
                    "aria-label": "Customer's phone" }, "📱");
 }
 
 async function callNow(name, button) {
   button.disabled = true;
   try {
-    await api("/calls", { method: "POST", headers: { "Content-Type": "application/json" },
+    await api(withKey("/calls"), { method: "POST", headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ customer: name }) });
     toast(`${name}ને ફોન લાગી રહ્યો છે · Calling (open their phone 📱)`);
   } catch (e) {
@@ -358,6 +368,7 @@ async function runCalls() {
   const params = new URLSearchParams();
   if (demoToday()) params.set("today", demoToday());
   if (!hours?.open) params.set("anytime", "true"); // outside call hours: a demo run
+  if (ownerKey) params.set("k", ownerKey);
   try {
     const rung = await api(`/calls/run?${params}`, { method: "POST" });
     toast(rung.length ? `${rung.length} ફોન લાગી રહ્યા છે · Calling ${rung.length}` : "આજે કોઈને ફોન કરવાનો નથી · Nobody to call");
@@ -416,10 +427,12 @@ async function refreshCalls() {
   clearTimeout(callsTimer);
   let calls = [];
   try {
-    const [queue, log, h] = await Promise.all([api(withToday("/calls/queue")), api("/calls"), api("/calls/hours")]);
+    const [queue, log, h] = await Promise.all([api(withToday("/calls/queue")), api("/calls"), api(withKey("/calls/hours"))]);
     calls = log;
     hours = h;
     const busy = new Set(log.filter((c) => c.status === "ringing" || c.status === "in_progress").map((c) => c.customer));
+    $("demo-left").hidden = h.demo_left == null;
+    $("demo-left").textContent = `આજે ડેમો ફોન બાકી: ${h.demo_left} · Demo calls left today: ${h.demo_left}`;
     $("hours-note").hidden = h.open;
     $("hours-note").textContent = `ઓટો ફોન ${h.hours.replace(",", " અને ")} વચ્ચે જ જાય${h.sunday ? "" : ", રવિવારે નહીં"}; અત્યારે "બધાને ફોન" ડેમો તરીકે જશે. · Outside call hours: "Call all" runs as a demo.`;
     $("run-calls").disabled = !queue.length;

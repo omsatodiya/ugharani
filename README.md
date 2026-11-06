@@ -158,4 +158,6 @@ uv run python scripts/bundle_clips.py --synthesize   # also make missing ones (1
 ```
 
 `GNANI_DAILY_LIMIT` (default 150) caps Prisma + Timbre calls per server per day, so a public
-link can't drain the credits.
+link can't drain the credits. `LIVE_CALLS_PER_DAY` (default 10) caps answered calls from the
+public link; the owner adds `?k=<DEMO_KEY>` to the app or phone page and is never counted or
+refused. `.github/workflows/keep-awake.yml` pings the free server every 10 minutes during the day.

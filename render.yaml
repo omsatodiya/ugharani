@@ -11,3 +11,7 @@ services:
         sync: false   # the call agent's LLM; set in the Render dashboard
       - key: GNANI_DAILY_LIMIT
         value: "150"
+      - key: LIVE_CALLS_PER_DAY
+        value: "10"   # calls a day from the public link (protects the Gnani credits)
+      - key: DEMO_KEY
+        sync: false   # the owner's secret (?k=...): never counted or refused; set in the dashboard

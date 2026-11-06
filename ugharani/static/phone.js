@@ -3,6 +3,8 @@
 
 const $ = (id) => document.getElementById(id);
 const customer = new URLSearchParams(location.search).get("c");
+const ownerKey = new URLSearchParams(location.search).get("k"); // the owner's demo key, if any
+const withKey = (path) => (ownerKey ? `${path}${path.includes("?") ? "&" : "?"}k=${encodeURIComponent(ownerKey)}` : path);
 const RING_TIMEOUT_MS = 30000;
 
 let audio = null;       // AudioContext, unlocked by the first tap
@@ -62,7 +64,7 @@ async function callNow() {
   $("call-now-msg").hidden = false;
   $("call-now-msg").textContent = "કૉલ લાગી રહ્યો છે… · Placing the call…";
   try {
-    await post("/calls", { customer });
+    await post(withKey("/calls"), { customer });
     $("call-now-msg").hidden = true;
   } catch (e) {
     $("call-now-msg").textContent = e.message; // e.g. nothing pending for this customer
@@ -286,7 +288,7 @@ async function startLive(id) {
   mic.connect(worklet).connect(sink).connect(audio.destination);
   worklet.port.postMessage({ muted: $("mute").classList.contains("on") });
 
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/calls/${id}/live`);
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${withKey(`/calls/${id}/live`)}`);
   ws.binaryType = "arraybuffer";
   live = { ws, stream, mic, worklet, line: phoneLine(), sources: new Set(), playAt: 0, opened: false, held: null };
   worklet.port.onmessage = (e) => { if (ws.readyState === WebSocket.OPEN) ws.send(e.data); };

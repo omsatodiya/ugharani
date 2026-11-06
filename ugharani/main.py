@@ -264,8 +264,44 @@ def call_queue(today: date | None = None) -> list[dict]:
         conn.close()
 
 
+# ---------- the public demo's budget ----------
+# Anyone with the link can make Kavya call; each call spends Gnani credits (a live STT session and
+# a few Timbre requests). So the public gets LIVE_CALLS_PER_DAY calls a day; the owner, with the
+# secret DEMO_KEY (?k=... on the app or phone page), is never refused.
+
+_demo_calls: dict[date, int] = {}
+DEMO_USED_UP = "આજના ડેમો ફોન પૂરા થયા, કાલે ફરી પ્રયત્ન કરજો · Today's demo calls are used up; try tomorrow"
+
+
+def demo_calls_left() -> int:
+    return max(0, int(os.getenv("LIVE_CALLS_PER_DAY", "10")) - _demo_calls.get(date.today(), 0))
+
+
+def is_owner(key: str | None) -> bool:
+    secret = os.getenv("DEMO_KEY", "")
+    return bool(secret) and key == secret
+
+
+def check_demo_budget(key: str | None) -> None:
+    if not is_owner(key) and demo_calls_left() <= 0:
+        raise HTTPException(status_code=429, detail=DEMO_USED_UP)
+
+
+def spend_demo_call(key: str | None) -> bool:
+    """Count an answered call against today's public budget; False if none is left."""
+    if is_owner(key):
+        return True
+    if demo_calls_left() <= 0:
+        return False
+    today = date.today()
+    for day in [d for d in _demo_calls if d != today]:
+        del _demo_calls[day]
+    _demo_calls[today] = _demo_calls.get(today, 0) + 1
+    return True
+
+
 @app.get("/calls/hours")
-def call_hours() -> dict:
+def call_hours(k: str | None = None) -> dict:
     """Whether automatic calls may go out right now, and the owner's call hours."""
     conn = db.connect()
     try:
@@ -273,7 +309,7 @@ def call_hours() -> dict:
     finally:
         conn.close()
     return {"open": followup.calling_time(rules, datetime.now()), "hours": rules["call_hours"],
-            "sunday": rules["call_on_sunday"]}
+            "sunday": rules["call_on_sunday"], "demo_left": None if is_owner(k) else demo_calls_left()}
 
 
 class CallRequest(BaseModel):
@@ -289,8 +325,9 @@ def _customer(conn, name: str) -> dict:
 
 
 @app.post("/calls")
-def place_call(req: CallRequest, tasks: BackgroundTasks) -> dict:
+def place_call(req: CallRequest, tasks: BackgroundTasks, k: str | None = None) -> dict:
     """The owner taps 'call now': the customer's phone page starts ringing."""
+    check_demo_budget(k)
     conn = db.connect()
     try:
         c = _customer(conn, req.customer)
@@ -306,7 +343,8 @@ def place_call(req: CallRequest, tasks: BackgroundTasks) -> dict:
 
 
 @app.post("/calls/run")
-def run_queue(tasks: BackgroundTasks, today: date | None = None, anytime: bool = False) -> list[dict]:
+def run_queue(tasks: BackgroundTasks, today: date | None = None, anytime: bool = False,
+              k: str | None = None) -> list[dict]:
     """The auto-ugharani tick: ring everyone due a call today under the owner's rules, only in the
     call hours (not Sundays or festival days). `anytime` skips that, for a demo."""
     conn = db.connect()
@@ -314,6 +352,7 @@ def run_queue(tasks: BackgroundTasks, today: date | None = None, anytime: bool =
         rules = followup.get_settings(conn)
         if not anytime and not followup.calling_time(rules, datetime.now()):
             return []
+        check_demo_budget(k)
         rung = []
         for q in followup.to_call(conn, today or date.today()):
             tasks.add_task(live.warm_up, rules, _customer(conn, q["customer"]))
@@ -414,6 +453,9 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
         conn.close()
     if call is None or customer is None or call["status"] != "in_progress":
         await ws.close(code=4404 if call is None else 4409)
+        return
+    if not spend_demo_call(ws.query_params.get("k")):
+        await ws.close(code=4429)
         return
     if call_id in _live_calls or len(_live_calls) >= max_live_calls():
         await ws.close(code=4429)

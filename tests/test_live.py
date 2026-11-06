@@ -1069,3 +1069,28 @@ def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monke
     time.sleep(0.3)
     saved = client.get(f"/calls/{call['id']}").json()
     assert saved["status"] == "completed" and saved["transcript"] and saved["outcome"] is None
+
+
+def test_the_public_demo_gets_a_few_calls_a_day_the_owner_always(phone, monkeypatch):
+    client, call_id, rec = phone
+    monkeypatch.setenv("LIVE_CALLS_PER_DAY", "1")
+    monkeypatch.setenv("DEMO_KEY", "owner-secret")
+    rec["replies"] = ["સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:  # the day's one public call
+        until(ws, {"type": "end"})
+    assert client.get("/calls/hours").json()["demo_left"] == 0
+    refused = client.post("/calls", json={"customer": "રમેશભાઈ"})
+    assert refused.status_code == 429 and "used up" in refused.json()["detail"]
+
+    owner = client.post("/calls", params={"k": "owner-secret"}, json={"customer": "રમેશભાઈ"}).json()
+    client.post(f"/calls/{owner['id']}/status", json={"status": "in_progress"})
+    with client.websocket_connect(f"/calls/{owner['id']}/live?k=owner-secret") as ws:
+        until(ws, {"type": "end"})  # never refused
+    assert client.get("/calls/hours", params={"k": "owner-secret"}).json()["demo_left"] is None
+
+    stranger = client.post("/calls", params={"k": "owner-secret"}, json={"customer": "રમેશભાઈ"}).json()
+    client.post(f"/calls/{stranger['id']}/status", json={"status": "in_progress"})
+    with pytest.raises(WebSocketDisconnect) as closed:  # a ringing call answered without the key
+        with client.websocket_connect(f"/calls/{stranger['id']}/live") as ws:
+            ws.receive()
+    assert closed.value.code == 4429

@@ -247,4 +247,5 @@ def test_auto_calls_wait_for_the_call_hours(client, monkeypatch):
 
 def test_call_hours_say_whether_auto_calls_may_go_now(client, monkeypatch):
     monkeypatch.setattr(followup, "calling_time", lambda rules, now: True)
-    assert client.get("/calls/hours").json() == {"open": True, "hours": "10:00-13:00,16:00-19:30", "sunday": False}
+    assert client.get("/calls/hours").json() == {"open": True, "hours": "10:00-13:00,16:00-19:30", "sunday": False,
+                                                   "demo_left": 1000}

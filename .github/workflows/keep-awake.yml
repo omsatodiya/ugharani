@@ -1,0 +1,13 @@
+# Render's free server sleeps after 15 idle minutes and then takes ~50 s to wake. During the day
+# (about 8 am to 11 pm IST) this pings it every 10 minutes, so a visitor never waits.
+name: keep-awake
+on:
+  schedule:
+    - cron: "*/10 2-17 * * *"   # UTC: 02:00-17:59 = 07:30-23:29 IST
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: curl -fsS --max-time 90 https://ugharani.onrender.com/health || true
