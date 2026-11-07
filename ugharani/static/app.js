@@ -342,6 +342,17 @@ function when(iso) {
   return new Date(iso).toLocaleString("gu-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+function icon(name) {
+  // A line icon from /icons.svg (no emoji: they look different on every phone).
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "i");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `/icons.svg#${name}`);
+  svg.append(use);
+  return svg;
+}
+
 function chip([label, kind]) {
   return el("span", { class: `chip ${kind}` }, label);
 }
@@ -349,7 +360,7 @@ function chip([label, kind]) {
 function phoneLink(name) {
   // The demo's stand-in for the customer's phone: open it (on another device) to take the call.
   return el("a", { class: "btn small", href: withKey(`/phone.html?c=${encodeURIComponent(name)}`), target: "_blank",
-                   "aria-label": "Customer's phone" }, "📱");
+                   "aria-label": "Customer's phone" }, icon("smartphone"));
 }
 
 async function callNow(name, button) {
@@ -357,7 +368,7 @@ async function callNow(name, button) {
   try {
     await api(withKey("/calls"), { method: "POST", headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ customer: name }) });
-    toast(`${name}ને ફોન લાગી રહ્યો છે · Calling (open their phone 📱)`);
+    toast(`${name}ને ફોન લાગી રહ્યો છે · Calling (open their phone)`);
   } catch (e) {
     toast(`ભૂલ · ${e.message}`);
   }
@@ -398,7 +409,7 @@ function callItem(c) {
     c.summary ? el("p", { class: "note" }, c.summary) : null,
     writing ? el("p", { class: "note why" }, "નોંધ લખાય છે… · Writing the notes…") : null,
     promise ? el("p", { class: "promise" }, `વાયદો: ${promise}`) : null,
-    c.owner_action ? el("p", { class: "action" }, `➜ ${c.owner_action}`) : null,
+    c.owner_action ? el("p", { class: "action" }, icon("hand"), c.owner_action) : null,
     turns.length ? el("details", {}, el("summary", {}, `વાતચીત · Conversation (${turns.length})`), ...turns) : null,
   );
 }
