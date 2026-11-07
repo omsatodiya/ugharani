@@ -85,6 +85,7 @@ img, svg { display: block; }
 .nav-links a { text-decoration: none; opacity: 0.8; }
 .nav-links a:hover { opacity: 1; }
 .nav-right { display: flex; align-items: center; gap: 14px; }
+.nav { transition: background 0.35s ease, color 0.35s ease, border-color 0.35s ease; }
 .nav.dark { background: rgba(6, 18, 51, 0.35); border-bottom-color: rgba(255, 255, 255, 0.08); color: #fff; }
 .nav.dark.scrolled { background: rgba(244, 248, 255, 0.82); border-bottom-color: var(--line); color: var(--ink); }
 

@@ -12,6 +12,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/landing.css">
+  <!-- hide the hero until Motion can animate it in (never longer than 2.5 s) -->
+  <script>document.documentElement.classList.add("pre");setTimeout(()=>document.documentElement.classList.remove("pre"),2500)</script>
 </head>
 <body>
   <header class="nav dark" id="nav">
@@ -101,9 +103,9 @@
     <section class="band" aria-label="In numbers">
       <div class="stats">
         <div><b>₹10–15k</b><span>a month: what a ઉઘરાણી staff member costs a small manufacturer</span></div>
-        <div><b>0.25 s</b><span>to go quiet when the dealer talks over her, like a person</span></div>
-        <div><b>100%</b><span>of her sentences checked against your rules, before they're spoken</span></div>
-        <div><b>2</b><span>languages, Gujarati and Hindi, matched to the dealer</span></div>
+        <div><b data-count="0.25" data-fmt="s">0.25 s</b><span>to go quiet when the dealer talks over her, like a person</span></div>
+        <div><b data-count="100" data-fmt="%">100%</b><span>of her sentences checked against your rules, before they're spoken</span></div>
+        <div><b data-count="2">2</b><span>languages, Gujarati and Hindi, matched to the dealer</span></div>
       </div>
     </section>
   </div>
@@ -331,6 +333,6 @@
     <div class="wordmark" aria-hidden="true">ugharani</div>
   </footer>
 
-  <script src="/landing.js"></script>
+  <script type="module" src="/landing.js"></script>
 </body>
 </html>

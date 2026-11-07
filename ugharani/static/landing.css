@@ -79,8 +79,7 @@ main { display: block; }
   -webkit-mask-image: linear-gradient(transparent 0, #000 56px); mask-image: linear-gradient(transparent 0, #000 56px);
 }
 .convo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font: 15px/1.5 "Noto Sans Gujarati", var(--sans); }
-.convo li { max-width: 84%; padding: 10px 14px; border-radius: 18px; animation: pop 0.35s ease both; }
-@keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+.convo li { max-width: 84%; padding: 10px 14px; border-radius: 18px; }
 .convo .k { align-self: flex-start; background: var(--navy-900); color: #fff; border-bottom-left-radius: 6px; }
 .convo .c { align-self: flex-end; background: var(--sky-100); color: var(--ink); border-bottom-right-radius: 6px; }
 .convo .guard {
@@ -273,9 +272,8 @@ h2.serif.left { text-align: left; }
   color: rgba(47, 107, 255, 0.12); margin: 8px 0 0; padding-bottom: 0.06em; user-select: none; white-space: nowrap;
 }
 
-/* ---------- reveal on scroll ---------- */
-.reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.6s ease, transform 0.6s ease; }
-.reveal.shown { opacity: 1; transform: none; }
+/* (sections rise in on scroll with Motion: see anim.js; without it they simply show) */
+.pre .hero-in > *, .pre .stage .panel { opacity: 0; }
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 960px) {

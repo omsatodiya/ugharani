@@ -1,5 +1,8 @@
-// The landing page: the hero call plays out line by line (and loops), sections fade in on
-// scroll, the bar turns light once past the night sky, and the demo shows calls left today.
+// The landing page: the hero call plays out line by line (and loops), sections rise in as they
+// scroll into view (Motion, see anim.js), the bar turns light once past the night sky, and the
+// demo shows calls left today.
+
+import { countUp, enter, pressable, ready, reveal } from "/anim.js";
 
 const nav = document.getElementById("nav");
 const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > window.innerHeight * 0.6);
@@ -60,7 +63,9 @@ async function play() {
     for (const item of CALL) {
       wave.classList.toggle("them", item[0] === "c");
       wave.classList.toggle("quiet", item[0] === "guard");
-      convo.append(line(item));
+      const li = line(item);
+      convo.append(li);
+      enter(li, { y: 10, scale: item[0] === "guard" ? 0.9 : 0.97 });
       while (convo.children.length > 6) convo.firstElementChild.remove();
       await wait(item[0] === "guard" ? 1800 : 900 + item[1].length * 30);
     }
@@ -72,16 +77,30 @@ async function play() {
 if (still) CALL.slice(-6).forEach((item) => convo.append(line(item)));
 else play();
 
-// ---------- reveal on scroll ----------
-const seen = new IntersectionObserver((entries) => {
-  for (const e of entries) {
-    if (e.isIntersecting) {
-      e.target.classList.add("shown");
-      seen.unobserve(e.target);
-    }
+// ---------- motion: the hero comes in, then each section as it scrolls into view ----------
+ready.then((m) => {
+  document.documentElement.classList.remove("pre");
+  if (!m) return;
+  enter([".badge", ".hero h1", ".lede", ".cta-row", ".stage"], { y: 24, gap: 0.09 });
+  enter(".stage .panel", { y: 30, delay: 0.35, gap: 0.12 });
+  // .reveal items rise in together with their siblings, one after another
+  const groups = new Map();
+  for (const el of document.querySelectorAll(".reveal")) {
+    const box = el.parentElement;
+    groups.set(box, [...(groups.get(box) || []), el]);
   }
-}, { threshold: 0.12 });
-document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+  for (const [box, kids] of groups) reveal(box, kids, { y: 22, gap: 0.08 });
+  reveal(document.querySelector(".stats"), [...document.querySelectorAll(".stats > div")], { y: 16, gap: 0.08 });
+  reveal(document.querySelector(".try-in"), [...document.querySelectorAll(".try-in > *")], { y: 18, gap: 0.07 });
+  reveal(document.querySelector(".footer-in"), [...document.querySelectorAll(".footer-in > *")], { y: 18, gap: 0.08 });
+  for (const b of document.querySelectorAll("[data-count]")) {
+    const to = Number(b.dataset.count), unit = b.dataset.fmt;
+    const fmt = (n) => unit === "s" ? `${n.toFixed(2)} s` : unit === "%" ? `${Math.round(n)}%` : String(Math.round(n));
+    b.textContent = fmt(0);
+    m.inView(b, () => countUp(b, to, fmt), { amount: 0.6 });
+  }
+  pressable(".btn");
+});
 
 // ---------- the live demo's budget ----------
 fetch("/calls/hours")
