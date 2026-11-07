@@ -13,8 +13,20 @@ let call = null;        // {id} of the ringing/active call
 let seen = new Set();   // call ids already shown, so a declined call doesn't ring again
 let ringTimer = null, tickTimer = null, wakeLock = null, startedAt = 0;
 
+// Smooth screen changes and button presses (Motion, see anim.js); without it screens just switch.
+let anim = null;
+import("/anim.js").then(async (m) => {
+  await m.ready;
+  anim = m;
+  m.pressable(".arm, .call-now, .round, .key, #pick a");
+  m.enter(document.querySelectorAll(".screen:not([hidden]) > *"), { y: 12, gap: 0.06 });
+}).catch(() => {});
+
 function show(id) {
   for (const s of document.querySelectorAll(".screen")) s.hidden = s.id !== id;
+  const screen = document.getElementById(id);
+  anim?.swap(screen, { y: 0 });
+  anim?.enter(screen.children, { y: 16, gap: 0.05, scale: 0.98 });
 }
 
 async function api(path, options) {

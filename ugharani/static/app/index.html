@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/style.css">
+  <!-- hide the page until Motion can bring it in (never longer than 2.5 s) -->
+  <script>document.documentElement.classList.add("pre");setTimeout(()=>document.documentElement.classList.remove("pre"),2500)</script>
 </head>
 <body class="sky">
   <header class="nav">
@@ -24,6 +26,7 @@
         <span class="brand-name"><b>Ugharani</b><span>Owner's desk</span></span>
       </a>
       <nav class="tabs" id="tabs" aria-label="Sections">
+        <span class="tab-pill" id="tab-pill" aria-hidden="true"></span>
         <a href="#today" data-view="today"><svg class="i"><use href="/icons.svg#home"/></svg>આજે <small>Today</small></a>
         <a href="#calls" data-view="calls"><svg class="i"><use href="/icons.svg#phone"/></svg>ફોન <small>Calls</small></a>
         <a href="#ledger" data-view="ledger"><svg class="i"><use href="/icons.svg#book"/></svg>ખાતું <small>Ledger</small></a>

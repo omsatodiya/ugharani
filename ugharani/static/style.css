@@ -12,15 +12,17 @@ small { font-size: 0.74em; font-weight: 500; color: var(--muted); }
 /* ---------- top bar + tabs ---------- */
 .nav-in { max-width: 1120px; display: grid; grid-template-columns: 1fr auto 1fr; }
 .demo-flag { justify-self: end; }
-.tabs { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(11, 31, 77, 0.05); }
+.tabs { position: relative; display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(11, 31, 77, 0.05); }
+.tab-pill { position: absolute; left: 0; top: 0; border-radius: 10px; background: #fff; box-shadow: 0 1px 3px rgba(11, 31, 77, 0.14); }
 .tabs a {
+  position: relative; z-index: 1; transition: color 0.2s ease;
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px;
   text-decoration: none; font: 600 14px "Noto Sans Gujarati", var(--sans); color: var(--muted);
 }
 .tabs a small { font-family: var(--sans); }
 .tabs a .i { width: 16px; height: 16px; }
 .tabs a:hover { color: var(--ink); }
-.tabs a.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(11, 31, 77, 0.14); }
+.tabs a.on { color: var(--ink); }
 .demo-flag {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; text-decoration: none;
   font-size: 13px; font-weight: 600; color: var(--warn); background: var(--warn-bg); border: 1px solid rgba(180, 83, 9, 0.2);
@@ -32,6 +34,7 @@ small { font-size: 0.74em; font-weight: 500; color: var(--muted); }
 /* ---------- pages ---------- */
 main { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
 .view[hidden] { display: none; }
+.pre main { opacity: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 36px 0 20px; }
 .page-head h1 { margin: 0; font-size: 46px; line-height: 1; }
 .page-head p { margin: 8px 0 0; color: var(--muted); }
@@ -184,6 +187,7 @@ dialog::backdrop { background: rgba(6, 18, 51, 0.45); backdrop-filter: blur(2px)
     text-decoration: none; font: 600 12px "Noto Sans Gujarati", var(--sans); color: var(--muted);
   }
   .tabbar a .i { width: 20px; height: 20px; }
+  .tabbar a { transition: color 0.2s ease, background 0.25s ease; }
   .tabbar a.on { color: var(--navy-900); background: var(--sky-100); }
   .dock { bottom: calc(62px + env(safe-area-inset-bottom)); padding-bottom: 12px; }
   .mic { width: 68px; height: 68px; }

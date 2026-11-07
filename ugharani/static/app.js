@@ -2,6 +2,7 @@
 // and balances) and Settings (Kavya's rules, call hours, business, demo date).
 // Voice entries: record 16 kHz WAV -> /entries/voice -> answer missing fields -> confirm -> /entries.
 
+import { countUp, enter, pop, pressable, ready, slideTo, swap } from "/anim.js";
 import { audioButton, datePicker, icon } from "/ui.js";
 
 const $ = (id) => document.getElementById(id);
@@ -44,6 +45,7 @@ let toastTimer;
 function toast(message) {
   const t = $("toast");
   t.textContent = message;
+  if (t.hidden) pop(t, { y: 8 });
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), 3500);
@@ -84,10 +86,19 @@ const putJson = (path, body) =>
 
 const VIEWS = ["today", "calls", "ledger", "settings"];
 
+let shownView = null;
+
 function showView() {
   const name = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "today";
   for (const v of VIEWS) $(`view-${v}`).hidden = v !== name;
   for (const a of document.querySelectorAll("[data-view]")) a.classList.toggle("on", a.dataset.view === name);
+  slideTo($("tab-pill"), document.querySelector(`.tabs [data-view="${name}"]`), $("tabs"));
+  if (shownView !== name) {  // the new section slides in, its cards one after another
+    const view = $(`view-${name}`);
+    swap(view, { y: 8 });
+    enter(view.querySelectorAll(".page-head, .stat, .card, .banner:not([hidden])"), { y: 14, gap: 0.05 });
+    shownView = name;
+  }
   // The mic adds ledger entries: shown on Today and Ledger only.
   $("dock").hidden = !(name === "today" || name === "ledger") || !navigator.mediaDevices?.getUserMedia;
   window.scrollTo(0, 0);
@@ -222,6 +233,7 @@ async function sendRecording(wav) {
 }
 
 function showConvo(body) {
+  if ($("convo").hidden) enter($("convo"), { y: 12, scale: 0.98 });
   $("convo").hidden = false;
   $("how-to").hidden = true;
   $("heard").textContent = `તમે બોલ્યા: “${body.transcript}”`;
@@ -284,9 +296,9 @@ async function refresh() {
   $("summary-say").textContent = s.say;
   $("play-summary").hidden = !s.audio;
   const sum = (status) => s.items.filter((i) => i.status === status).reduce((n, i) => n + i.amount, 0);
-  $("st-due").textContent = rupees.format(sum("today"));
-  $("st-over").textContent = rupees.format(sum("overdue"));
-  $("due-items").replaceChildren(...(s.items.length
+  countUp($("st-due"), sum("today"), (n) => rupees.format(n));
+  countUp($("st-over"), sum("overdue"), (n) => rupees.format(n));
+  fill($("due-items"), s.items, () => (s.items.length
     ? s.items.map((i) =>
         el("li", {},
           el("div", { class: "who" },
@@ -297,7 +309,7 @@ async function refresh() {
         ))
     : [el("li", {}, el("span", { class: "empty" }, "આજે કંઈ બાકી નથી · Nothing due"))]));
   const open = balances.filter((b) => b.balance > 0);
-  $("balances").replaceChildren(...(open.length
+  fill($("balances"), open, () => (open.length
     ? open.map((b) =>
         el("li", {},
           el("div", { class: "who" },
@@ -306,6 +318,17 @@ async function refresh() {
           el("span", { class: "amt" }, rupees.format(b.balance)),
         ))
     : [el("li", {}, el("span", { class: "empty" }, "હજી કોઈ ઉધાર નથી · No open credit yet"))]));
+}
+
+/** Put a list's items in place, but only if what they show has changed: no flicker, open
+ *  conversations stay open on the 20 s refresh, and new items rise in. */
+function fill(list, data, build) {
+  const key = JSON.stringify(data);
+  if (list.dataset.key === key) return;
+  const first = list.dataset.key === undefined;
+  list.dataset.key = key;
+  list.replaceChildren(...build());
+  if (!first) enter(list.children, { y: 8, gap: 0.04 });
 }
 
 async function openReminder(buyer) {
@@ -318,6 +341,7 @@ async function openReminder(buyer) {
   $("reminder-say").textContent = reminder.say;
   $("play-reminder").hidden = !reminder.audio;
   $("reminder").showModal();
+  pop($("reminder"), { y: 12 });
 }
 
 async function shareReminder() {
@@ -462,13 +486,15 @@ async function refreshCalls() {
     $("hours-note").textContent = `ઓટો ફોન ${h.hours.replace(",", " અને ")} વચ્ચે જ જાય${h.sunday ? "" : ", રવિવારે નહીં"}; અત્યારે "બધાને ફોન" ડેમો તરીકે જશે. · Outside call hours: "Call all" runs as a demo.`;
     $("run-calls").disabled = !queue.length;
     const none = "આજે કોઈને ફોન કરવાનો નથી · Nobody to call today";
-    $("queue").replaceChildren(...(queue.length ? queue.map((q) => queueItem(q, busy)) : empty(none)));
-    $("next-calls").replaceChildren(...(queue.length ? queue.slice(0, 3).map((q) => queueItem(q, busy)) : empty(none)));
-    $("call-log").replaceChildren(...(log.length ? log.slice(0, 20).map(callItem) : empty("હજી કોઈ ફોન નથી કર્યો · No calls yet")));
+    const busyKey = [...busy].sort();
+    fill($("queue"), [queue, busyKey], () => (queue.length ? queue.map((q) => queueItem(q, busy)) : empty(none)));
+    fill($("next-calls"), [queue.slice(0, 3), busyKey], () => (queue.length ? queue.slice(0, 3).map((q) => queueItem(q, busy)) : empty(none)));
+    fill($("call-log"), log.slice(0, 20), () => (log.length ? log.slice(0, 20).map(callItem) : empty("હજી કોઈ ફોન નથી કર્યો · No calls yet")));
     const tasks = tasksFrom(log);
-    $("tasks").replaceChildren(...(tasks.length ? tasks : empty("કંઈ બાકી નથી · Nothing for you")));
-    $("st-calls").textContent = queue.length;
-    $("st-tasks").textContent = tasks.length;
+    fill($("tasks"), log.slice(0, 20).map((c) => [c.id, c.owner_action, c.outcome, c.flags]),
+      () => (tasks.length ? tasks : empty("કંઈ બાકી નથી · Nothing for you")));
+    countUp($("st-calls"), queue.length);
+    countUp($("st-tasks"), tasks.length);
   } catch (e) {
     toast(`ભૂલ · ${e.message}`);
   }
@@ -563,7 +589,14 @@ function showDemoDate() {
 
 function init() {
   window.addEventListener("hashchange", showView);
+  window.addEventListener("resize", () => slideTo($("tab-pill"), document.querySelector(".tabs .on"), $("tabs")));
   showView();
+  ready.then(() => {  // first visit: the section comes in once Motion is ready
+    document.documentElement.classList.remove("pre");
+    pressable(".btn, .icon-btn, .mic, .tabbar a");
+    shownView = null;
+    showView();
+  });
 
   const player = $("player");
   summaryAudio = audioButton($("play-summary"), player, () => summary?.audio);

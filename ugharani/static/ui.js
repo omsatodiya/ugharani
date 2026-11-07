@@ -1,6 +1,8 @@
 // Small UI pieces for the owner's desk, modelled on shadcn/ui (Date Picker, Switch) but in plain
 // JS: no build step. Styles are in ui.css.
 
+import { pop as popIn } from "/anim.js";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** A line icon from /icons.svg. */
@@ -113,6 +115,7 @@ export function datePicker(host, { value = null, placeholder = "Pick a date", on
     if (selected) month = new Date(selected.getFullYear(), selected.getMonth(), 1);
     render();
     pop.hidden = false;
+    popIn(pop);
     button.setAttribute("aria-expanded", "true");
     setTimeout(() => document.addEventListener("click", outside), 0);
     document.addEventListener("keydown", onKey);
