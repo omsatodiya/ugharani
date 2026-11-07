@@ -1,0 +1,78 @@
+/* shadcn/ui-style controls (Input, Switch, Segmented, Date Picker, Tabs), on theme.css tokens. */
+
+.input {
+  height: 40px; width: 100%; padding: 0 12px; border-radius: 10px;
+  font: 500 15px var(--sans); color: var(--ink); background: #fff;
+  border: 1px solid rgba(11, 31, 77, 0.16); box-shadow: 0 1px 2px rgba(11, 31, 77, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus { outline: none; border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.18); }
+.input[type="number"] { width: 96px; }
+.input[type="time"] { width: 140px; }
+
+/* Switch */
+.switch {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
+  width: 44px; height: 24px; border-radius: 999px; position: relative;
+  background: rgba(11, 31, 77, 0.18); transition: background 0.2s;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s;
+}
+.switch:checked { background: var(--navy-900); }
+.switch:checked::after { transform: translateX(20px); }
+.switch:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
+
+/* Segmented (radio group) */
+.segmented { display: inline-flex; padding: 4px; gap: 4px; border-radius: 12px; background: var(--sky-100); }
+.segmented label { position: relative; cursor: pointer; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span { display: block; padding: 7px 14px; border-radius: 9px; font: 600 14px "Noto Sans Gujarati", var(--sans); color: var(--muted); }
+.segmented input:checked + span { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(11, 31, 77, 0.14); }
+.segmented input:focus-visible + span { outline: 2px solid var(--blue-500); }
+
+/* Date Picker: trigger + popover calendar */
+.dp { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.dp-trigger {
+  display: inline-flex; align-items: center; gap: 10px; height: 40px; min-width: 200px; padding: 0 12px;
+  border-radius: 10px; border: 1px solid rgba(11, 31, 77, 0.16); background: #fff; cursor: pointer;
+  font: 500 15px var(--sans); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(11, 31, 77, 0.04);
+}
+.dp-trigger.empty { color: var(--muted); }
+.dp-trigger .i { width: 16px; height: 16px; color: var(--muted); }
+.dp-trigger:hover { background: var(--sky-50); }
+.dp-clear {
+  width: 32px; height: 32px; border-radius: 8px; border: 0; background: none; cursor: pointer; color: var(--muted);
+  display: grid; place-items: center;
+}
+.dp-clear:hover { background: var(--sky-100); color: var(--ink); }
+.dp-clear .i { width: 14px; height: 14px; }
+.dp-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: 280px; padding: 12px;
+  background: #fff; border-radius: 14px; border: 1px solid var(--line);
+  box-shadow: 0 12px 32px -8px rgba(11, 31, 77, 0.28);
+  animation: dp-in 0.12s ease-out;
+}
+@keyframes dp-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+.dp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font: 600 14px var(--sans); }
+.dp-nav {
+  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+}
+.dp-nav:hover { background: var(--sky-50); }
+.dp-nav .i { width: 14px; height: 14px; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-wd { text-align: center; font: 500 12px var(--sans); color: var(--muted); padding: 6px 0; }
+.dp-day {
+  height: 34px; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  font: 500 14px var(--sans); color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.dp-day:hover { background: var(--sky-100); }
+.dp-day.out { color: rgba(90, 106, 134, 0.5); }
+.dp-day.today { background: var(--sky-100); font-weight: 700; }
+.dp-day.sel { background: var(--navy-900); color: #fff; }
+
+/* Play / pause */
+.play-btn { display: inline-grid; place-items: center; }
+.play-btn.playing { background: var(--navy-900); color: #fff; border-color: var(--navy-900); }
