@@ -121,7 +121,9 @@ def test_tts_failure_still_returns_the_draft(client, monkeypatch):
 
 def test_pwa_is_served_without_shadowing_the_api(client):
     page = client.get("/")
-    assert page.status_code == 200 and "ઉઘરાણી" in page.text
+    assert page.status_code == 200 and "ઉઘરાણી" in page.text and 'href="/app/"' in page.text  # the landing page
+    desk = client.get("/app/")
+    assert desk.status_code == 200 and 'id="mic"' in desk.text and "/theme.css" in desk.text  # the owner's desk
     assert client.get("/app.js").headers["content-type"].startswith(("text/javascript", "application/javascript"))
     assert client.get("/manifest.webmanifest").headers["content-type"] == "application/manifest+json"
     assert client.get("/health").json() == {"status": "ok"}

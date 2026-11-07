@@ -1,7 +1,7 @@
 # Demo video: script and shot list (2½-3 min)
 
-Setup before recording: laptop shows the owner's app (https://ugharani.onrender.com), phone shows
-`/phone.html?c=રમેશભાઈ` already tapped once. Open both a minute early (Render's free server sleeps).
+Setup before recording: laptop shows the owner's desk (https://ugharani.onrender.com/app/?k=YOUR_KEY),
+phone shows `/phone.html?c=રમેશભાઈ&k=YOUR_KEY` already tapped once. (Open the landing page `/` for shot 1.) Open both a minute early (Render's free server sleeps).
 Record the laptop screen + the phone (screen recording with sound, or a second camera on the phone).
 Use a quiet room and the phone's earpiece/speaker at normal volume.
 

@@ -1,132 +1,289 @@
 <!doctype html>
-<html lang="gu">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Ugharani</title>
-  <meta name="description" content="Gujarati voice credit ledger: speak a sale, get reminded of dues.">
-  <meta name="theme-color" content="#0f5132">
-  <link rel="manifest" href="/manifest.webmanifest">
+  <title>Ugharani · AI ઉઘરાણી calls in Gujarati</title>
+  <meta name="description" content="Kavya, an AI voice agent, phones your dealers about pending payments in Gujarati and Hindi, stays within your rules and writes the notes. Built on Gnani Prisma and Timbre.">
+  <meta name="theme-color" content="#0b1f4d">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Serif+Gujarati:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/landing.css">
 </head>
 <body>
-  <header class="top">
-    <div>
-      <h1>ઉઘરાણી</h1>
-      <p class="sub">Ugharani · બોલો, અમે યાદ રાખીશું</p>
+  <header class="nav dark" id="nav">
+    <div class="nav-in">
+      <a class="brand" href="/" aria-label="Ugharani home">
+        <span class="mark">ઉ</span>
+        <span class="brand-name"><b>Ugharani</b><span>Auto ઉઘરાણી</span></span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#call">On a call</a>
+        <a href="#rules">Your rules</a>
+        <a href="#how">How it works</a>
+        <a href="#gnani">Built on Gnani</a>
+      </nav>
+      <div class="nav-right">
+        <a class="nav-login" href="/app/">Owner's desk</a>
+        <a class="btn light" href="#try">Try a live call <span class="arrow">→</span></a>
+      </div>
     </div>
-    <label class="demo-date" title="Demo date: jump ahead to show dues">
-      <span>તારીખ</span>
-      <input type="date" id="today">
-    </label>
   </header>
 
-  <main>
-    <section class="card convo" id="convo" hidden aria-live="polite">
-      <div class="card-head">
-        <h2>નવી એન્ટ્રી <small>New entry</small></h2>
-        <button class="icon-btn" id="play-reply" aria-label="Play reply" hidden>▶</button>
+  <div class="night">
+  <!-- ---------- hero: the night sky ---------- -->
+  <section class="hero">
+    <div class="stars" aria-hidden="true"></div>
+    <div class="cloud c1" aria-hidden="true"></div>
+    <div class="cloud c2" aria-hidden="true"></div>
+    <div class="cloud c3" aria-hidden="true"></div>
+    <div class="hero-in">
+      <p class="eyebrow serif">The ઉઘરાણી call, without the extra staff.</p>
+      <h1 class="serif">An AI that phones your dealers for payment, <em>in Gujarati.</em></h1>
+      <p class="lede">કાવ્યા calls when a bill falls due. She gets a date, an amount and RTGS or cheque, stays
+        inside your rules, and writes the notes. You only take the calls she hands over.</p>
+      <div class="cta-row">
+        <a class="btn light" href="#try">Hear her call you <span class="arrow">→</span></a>
+        <a class="btn ghost-dark" href="/app/">Open the owner's desk</a>
       </div>
-      <p class="heard" id="heard"></p>
-      <dl class="draft" id="draft"></dl>
-      <p class="say" id="reply-say"></p>
-      <p class="hint" id="answer-hint" hidden>જવાબ બોલવા માટે માઇક દબાવો · Tap the mic to answer</p>
-      <div class="actions" id="confirm" hidden>
-        <button class="btn primary" id="save">હા, સાચવો <small>Save</small></button>
-        <button class="btn" id="cancel">ના, રદ કરો <small>Discard</small></button>
+
+      <!-- the product, live: a call on the left, the owner's note on the right -->
+      <div class="stage" aria-label="Example call">
+        <div class="call-card">
+          <div class="call-top">
+            <span class="pill dot live">Live call</span>
+            <span class="call-who">કાવ્યા → રમેશભાઈ · શ્રીજી હાર્ડવેર</span>
+            <span class="timer" id="timer">00:00</span>
+          </div>
+          <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <ol class="convo" id="convo">
+            <li class="k">હેલો રમેશભાઈ?</li>
+            <li class="c">હા બોલો.</li>
+            <li class="k">હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં. ₹1,20,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?</li>
+            <li class="c">થોડું ડિસ્કાઉન્ટ આપો તો શુક્રવારે અડધા આપી દઉં.</li>
+            <li class="guard">Checker: "discount" is outside the owner's rules, so it is never said</li>
+            <li class="k">એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે. શુક્રવારે ₹60,000, અને બાકીના?</li>
+            <li class="c">બાકીના 14 તારીખે, RTGS.</li>
+            <li class="k">તો શુક્રવારે ₹60,000 અને 14 તારીખે ₹60,000 RTGS, બરાબર ને?</li>
+          </ol>
+        </div>
+        <div class="note-card">
+          <p class="note-head">Owner's desk <span class="pill good">વાયદો · Promised</span></p>
+          <p class="note-name">રમેશભાઈ <span>₹1,20,000</span></p>
+          <dl class="note-dl">
+            <dt>Fri</dt><dd>₹60,000 · RTGS</dd>
+            <dt>14 Nov</dt><dd>₹60,000 · RTGS</dd>
+          </dl>
+          <p class="note-todo">➜ Call him about the discount he asked for</p>
+          <p class="note-foot">Written by Kavya, 4 seconds after the call</p>
+        </div>
       </div>
-    </section>
-
-    <section class="card" id="summary" aria-live="polite">
-      <div class="card-head">
-        <h2>આજની ઉઘરાણી <small>Today's dues</small></h2>
-        <button class="icon-btn" id="play-summary" aria-label="Play summary" hidden>▶</button>
-      </div>
-      <p class="say" id="summary-say">લોડ થાય છે…</p>
-      <ul class="items" id="due-items"></ul>
-    </section>
-
-    <section class="card" id="todo" hidden>
-      <div class="card-head">
-        <h2>તમારે કરવાનું <small>For you</small></h2>
-      </div>
-      <ul class="items" id="tasks"></ul>
-    </section>
-
-    <section class="card" id="calls">
-      <div class="card-head">
-        <h2>આજના ફોન <small>Calls today</small></h2>
-        <button class="btn small primary" id="run-calls">બધાને ફોન <small>Call all</small></button>
-      </div>
-      <p class="why" id="demo-left" hidden></p>
-      <p class="hint" id="hours-note" hidden></p>
-      <ul class="items" id="queue"></ul>
-    </section>
-
-    <section class="card" id="log">
-      <div class="card-head">
-        <h2>ફોનનો હિસાબ <small>Call log</small></h2>
-      </div>
-      <ul class="items calls" id="call-log"></ul>
-    </section>
-
-    <section class="card" id="rules">
-      <details>
-        <summary class="card-head"><h2>કાવ્યાના નિયમો <small>Kavya's rules</small></h2></summary>
-        <p class="why" id="rules-say"></p>
-        <form id="rules-form" class="rules">
-          <label>આખું પેમેન્ટ, વધુમાં વધુ <small>Whole payment within</small>
-            <span><input type="number" name="promise_days" min="1" max="60" required> દિવસ</span></label>
-          <label>ભાગમાં, છેલ્લો ભાગ <small>Last part within</small>
-            <span><input type="number" name="split_days" min="1" max="90" required> દિવસ</span></label>
-          <label>ફોનનો સમય <small>Call hours</small>
-            <input type="text" name="call_hours" required pattern="[0-9:, -]+"></label>
-          <label>તહેવાર, ફોન નહીં <small>Festival days (YYYY-MM-DD, …)</small>
-            <input type="text" name="holidays" placeholder="2026-11-08, 2026-11-10"></label>
-          <label class="check"><input type="checkbox" name="call_on_sunday"> રવિવારે પણ ફોન <small>Call on Sundays</small></label>
-          <label class="check"><input type="checkbox" name="auto_calls"> ઓટો ફોન ચાલુ <small>Automatic calls on</small></label>
-          <label>રીત <small>Tone</small>
-            <select name="tone"><option value="gentle">નરમ · Gentle</option><option value="firm">મક્કમ · Firm</option></select></label>
-          <button class="btn primary" type="submit">સાચવો <small>Save</small></button>
-        </form>
-      </details>
-    </section>
-
-    <section class="card" id="ledger">
-      <div class="card-head">
-        <h2>ખાતાવહી <small>Balances</small></h2>
-      </div>
-      <ul class="items" id="balances"></ul>
-    </section>
-
-    <p class="foot">Gnani Prisma (speech to text) + Timbre (text to speech) · ડેમો ડેટા / demo data</p>
-  </main>
-
-  <dialog id="reminder" aria-labelledby="reminder-title">
-    <h2 id="reminder-title">યાદી <small>Reminder</small></h2>
-    <p class="say" id="reminder-say"></p>
-    <div class="actions">
-      <button class="btn" id="play-reminder">▶ સાંભળો <small>Listen</small></button>
-      <button class="btn primary" id="share-reminder">WhatsApp પર મોકલો <small>Send</small></button>
+      <p class="works">Speech by <b>Gnani Prisma</b> (live Gujarati STT) · Voice by <b>Gnani Timbre</b></p>
     </div>
-    <button class="btn ghost" id="close-reminder">બંધ કરો <small>Close</small></button>
-  </dialog>
+  </section>
 
-  <div class="dock">
-    <button class="mic" id="mic" aria-label="Tap to speak">
-      <span class="mic-icon" aria-hidden="true"></span>
-      <span class="mic-label" id="mic-label">બોલો</span>
-    </button>
+  <!-- ---------- numbers ---------- -->
+  <section class="band">
+    <div class="stats">
+      <div><b>₹10-15k</b><span>a month: what a ઉઘરાણી staff member costs a small manufacturer</span></div>
+      <div><b>~0.25 s</b><span>to go quiet when the dealer talks over her, like a person</span></div>
+      <div><b>Every</b><span>sentence checked against your rules in code, before it is spoken</span></div>
+      <div><b>ગુજરાતી + हिंदी</b><span>she answers in the language the dealer speaks</span></div>
+    </div>
+  </section>
   </div>
 
-  <div class="toast" id="toast" role="status" hidden></div>
-  <audio id="player" preload="none"></audio>
+  <!-- ---------- one call, end to end ---------- -->
+  <section class="section" id="call">
+    <div class="head reveal">
+      <span class="pill">One ઉઘરાણી</span>
+      <h2 class="serif">From the first ring to a promise in the sheet</h2>
+      <p>Three things happen on every call. You only see the last one.</p>
+    </div>
+    <div class="flow">
+      <article class="card step reveal">
+        <span class="num">1</span>
+        <h3>She calls like your staff would</h3>
+        <p>"હેલો રમેશભાઈ?" Then she waits for their "હા", says who she is and that the call is recorded, and asks about the payment.</p>
+        <div class="mini-chat">
+          <p class="k">હેલો રમેશભાઈ?</p>
+          <p class="c">હા બોલો.</p>
+          <p class="k">હા નમસ્તે, હું કાવ્યા…</p>
+        </div>
+      </article>
+      <article class="card step reveal">
+        <span class="num">2</span>
+        <h3>Every line is checked first</h3>
+        <p>Before a sentence reaches the dealer's ear, code checks it against your rules: the amounts, the dates and the topics.</p>
+        <ul class="log">
+          <li class="ok">₹1,20,000: on an open bill</li>
+          <li class="ok">14 Nov: within your 15 days</li>
+          <li class="no">"2% discount": never said, owner told</li>
+        </ul>
+      </article>
+      <article class="card step reveal">
+        <span class="num">3</span>
+        <h3>The notes write themselves</h3>
+        <p>Outcome, promised amount and date, how they'll pay, and what is left for you. Plus the whole conversation.</p>
+        <div class="mini-note">
+          <span class="pill good">વાયદો</span>
+          <b>₹60,000 · Fri · RTGS</b>
+          <span class="todo">➜ Discount question: call him</span>
+        </div>
+      </article>
+    </div>
+  </section>
 
-  <script src="/app.js"></script>
+  <!-- ---------- sounds human ---------- -->
+  <section class="section split">
+    <div class="split-text reveal">
+      <span class="pill">Sounds like a person</span>
+      <h2 class="serif">Not a recorded reminder. A conversation.</h2>
+      <ul class="ticks">
+        <li><b>Talk over her and she stops</b>, in a quarter of a second. A "હા" or a cough? She carries on from the word she paused on.</li>
+        <li><b>"એક મિનિટ"</b> gets "હા જી, વાંધો નહીં." and up to a minute of patience.</li>
+        <li><b>Hindi-speaking dealer?</b> She answers in simple Hindi.</li>
+        <li><b>Short, everyday Saurashtra Gujarati</b>: "જી.", "સારું.", "બરાબર ને?". No script-reading.</li>
+        <li><b>Someone else picks up?</b> The dues stay private: "કહેજો ને કે ફોન હતો."</li>
+      </ul>
+    </div>
+    <div class="card barge reveal" aria-label="Talked over">
+      <p class="barge-head">When the dealer cuts in</p>
+      <div class="track">
+        <div class="lane"><span class="who">કાવ્યા</span><div class="bar her"><i style="width:46%"></i><em>paused</em><i class="dim" style="width:30%"></i></div></div>
+        <div class="lane"><span class="who">Dealer</span><div class="bar him"><span style="margin-left:44%;width:34%">"મેં તો અડધા આપી દીધા છે!"</span></div></div>
+      </div>
+      <ol class="barge-steps">
+        <li><b>0.25 s</b> her voice stops (our own speech detector on the line)</li>
+        <li><b>Words arrive</b>: real words, so she drops the rest and answers</li>
+        <li><b>Only "હા"?</b> She picks up where she stopped</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ---------- your rules ---------- -->
+  <section class="section" id="rules">
+    <div class="head reveal">
+      <span class="pill">Your rules, enforced</span>
+      <h2 class="serif">You decide what she may agree to</h2>
+      <p>Set it once in the owner's desk. She works inside it, and anything more comes to you.</p>
+    </div>
+    <div class="rules-grid">
+      <div class="card rules-card reveal">
+        <div class="lists">
+          <div class="allowed">
+            <p>She may</p>
+            <ul>
+              <li>Accept a date for the whole payment, up to 7 days away</li>
+              <li>Accept part payments, if all of it arrives within 15 days</li>
+              <li>Note RTGS, cheque, UPI or cash</li>
+              <li>Promise the statement or bank details on WhatsApp</li>
+              <li>Send rate and stock questions to the person they deal with</li>
+            </ul>
+          </div>
+          <div class="restricted">
+            <p>She never</p>
+            <ul>
+              <li>Offers a discount, or waives interest</li>
+              <li>Agrees to a date past your limit</li>
+              <li>Says an amount that is on no bill</li>
+              <li>Threatens, or mentions legal action</li>
+              <li>Tells anyone else what is owed</li>
+            </ul>
+          </div>
+        </div>
+        <div class="handoff">
+          <span class="q">Dealer: "30 દિવસ પછી આપું તો?"</span>
+          <ol>
+            <li class="on">Past your 15 days</li>
+            <li class="on">Never agreed</li>
+            <li>"શેઠ તમને ફોન કરશે" + a task for you</li>
+          </ol>
+        </div>
+      </div>
+      <div class="card hours-card reveal">
+        <span class="pill">Call hours</span>
+        <h3>She calls when your staff would</h3>
+        <div class="clock-row"><b>10:00 – 13:00</b><b>16:00 – 19:30</b></div>
+        <p>Not on Sundays or your festival days. A bill falls due, a promise is missed, or three days pass: she calls again on her own.</p>
+        <div class="tone"><span class="pill quiet">Tone</span> <b>નરમ</b> gentle, or <b>મક્કમ</b> firm</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- how it works ---------- -->
+  <section class="section" id="how">
+    <div class="head reveal">
+      <span class="pill">How it works</span>
+      <h2 class="serif">Four steps, and the first one you already do</h2>
+    </div>
+    <ol class="steps">
+      <li class="card reveal"><span class="num">01</span><h3>Dues come from your ledger</h3><p>Every bill and payment, with due dates. Speak entries by voice in Gujarati, or start from your outstanding list.</p></li>
+      <li class="card reveal"><span class="num">02</span><h3>She calls who's due</h3><p>In your call hours: overdue bills, missed promises, and repeat calls every few days.</p></li>
+      <li class="card reveal"><span class="num">03</span><h3>She gets a commitment</h3><p>Date, amount and mode, within your limits. Disputes, discounts and long dates are handed to you.</p></li>
+      <li class="card reveal"><span class="num">04</span><h3>You read the sheet</h3><p>Outcome, promise, your to-do list and the full conversation, seconds after each call.</p></li>
+    </ol>
+  </section>
+
+  <!-- ---------- built on Gnani ---------- -->
+  <section class="section" id="gnani">
+    <div class="head reveal">
+      <span class="pill">Built on Gnani</span>
+      <h2 class="serif">Indian speech, end to end</h2>
+      <p>Each sentence is spoken while the next one is still being written.</p>
+    </div>
+    <div class="card pipeline reveal">
+      <div class="node"><b>Dealer's voice</b><span>16 kHz phone audio</span></div>
+      <div class="arrow-r" aria-hidden="true"></div>
+      <div class="node gnani"><b>Gnani Prisma v3</b><span>live speech-to-text, gu-IN</span></div>
+      <div class="arrow-r" aria-hidden="true"></div>
+      <div class="node"><b>Reply</b><span>Gemini, streamed</span></div>
+      <div class="arrow-r" aria-hidden="true"></div>
+      <div class="node guardn"><b>Rules checker</b><span>your limits, in code</span></div>
+      <div class="arrow-r" aria-hidden="true"></div>
+      <div class="node gnani"><b>Gnani Timbre</b><span>voice: Tarika</span></div>
+    </div>
+  </section>
+
+  <!-- ---------- who it's for ---------- -->
+  <section class="section">
+    <div class="head reveal">
+      <span class="pill">Who it's for</span>
+      <h2 class="serif">Businesses that sell on credit</h2>
+    </div>
+    <div class="audience">
+      <article class="card reveal"><h3>Manufacturers</h3><p>Like Genius Polyplast, Gondal: pipe fittings to hundreds of hardware and sanitary dealers across Saurashtra.</p></article>
+      <article class="card reveal"><h3>Distributors and wholesalers</h3><p>Many small dealers, many small bills, and the same question every week: "ક્યારે મોકલશો?"</p></article>
+      <article class="card reveal"><h3>Traders</h3><p>Textile, diamond, hardware, FMCG: wherever goods go out on 30 to 60 days' credit.</p></article>
+    </div>
+    <div class="chips reveal"><span>Pipe fittings</span><span>Textile</span><span>Diamond</span><span>Hardware</span><span>Sanitaryware</span><span>FMCG distribution</span><span>Ceramics</span><span>Chemicals</span></div>
+  </section>
+
+  <!-- ---------- try it ---------- -->
+  <section class="final" id="try">
+    <div class="stars" aria-hidden="true"></div>
+    <div class="final-in">
+      <h2 class="serif">Let કાવ્યા call you.</h2>
+      <p>Open the phone on your mobile, tap once, then ask her to call. You are રમેશભાઈ, with ₹1,20,000 pending. Try cutting in, asking for a discount, or saying "એક મિનિટ".</p>
+      <div class="cta-row">
+        <a class="btn light" id="try-phone" href="/phone.html?c=%E0%AA%B0%E0%AA%AE%E0%AB%87%E0%AA%B6%E0%AA%AD%E0%AA%BE%E0%AA%88">Open the phone <span class="arrow">→</span></a>
+        <a class="btn ghost-dark" href="/app/">See the owner's desk</a>
+      </div>
+      <p class="left" id="demo-left" hidden></p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot-in">
+      <a class="brand" href="/"><span class="mark">ઉ</span><span class="brand-name"><b>Ugharani</b><span>Auto ઉઘરાણી</span></span></a>
+      <p>A solo entry from SVNIT Surat to Gnani's Great Indian AI Internship Challenge. Demo business: Genius Polyplast, Gondal (with permission); dealers are made up.</p>
+      <nav><a href="/app/">Owner's desk</a><a href="/phone.html">Phone</a><a href="https://github.com/omsatodiya/ugharani">GitHub</a></nav>
+    </div>
+  </footer>
+
+  <script src="/landing.js"></script>
 </body>
 </html>

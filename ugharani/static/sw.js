@@ -1,6 +1,6 @@
 // Network first, so a new deploy shows up at once; the cached shell lets the app open offline.
-const CACHE = "ugharani-v1";
-const SHELL = ["/", "/style.css", "/app.js", "/icon.svg", "/manifest.webmanifest"];
+const CACHE = "ugharani-v2";
+const SHELL = ["/app/", "/theme.css", "/style.css", "/app.js", "/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

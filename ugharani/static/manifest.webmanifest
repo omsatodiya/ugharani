@@ -1,12 +1,13 @@
 {
-  "name": "Ugharani · ઉઘરાણી",
+  "name": "Ugharani · Owner's desk",
   "short_name": "ઉઘરાણી",
-  "description": "Gujarati voice credit ledger: speak a sale, get reminded of dues.",
+  "description": "Kavya makes your payment follow-up calls in Gujarati; see dues, calls and notes.",
   "lang": "gu",
-  "start_url": "/",
+  "start_url": "/app/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f6f3ec",
-  "theme_color": "#0f5132",
+  "background_color": "#f4f8ff",
+  "theme_color": "#0b1f4d",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

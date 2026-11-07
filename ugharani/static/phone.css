@@ -1,67 +1,96 @@
-* { box-sizing: border-box; }
+/* The dealer's phone. Full screen on a phone; on a laptop, a phone in a frame on the night sky. */
+
 html, body { height: 100%; }
 body {
-  margin: 0; background: #0b0f14; color: #f2f5f7; overflow: hidden;
-  font-family: "Noto Sans Gujarati", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #f2f6ff; overflow: hidden;
+  font-family: "Inter", "Noto Sans Gujarati", system-ui, sans-serif;
+  background: radial-gradient(120% 90% at 70% 0%, var(--navy-800), var(--navy-950) 70%);
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
-small { display: block; font-size: 0.7em; opacity: 0.7; font-weight: 400; }
+small { display: block; font-size: 0.72em; opacity: 0.72; font-weight: 400; }
 button { font: inherit; color: inherit; }
 
+.side { display: none; }
+.device { position: fixed; inset: 0; overflow: hidden; }
+
 .screen {
-  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
   padding: calc(48px + env(safe-area-inset-top)) 24px calc(40px + env(safe-area-inset-bottom));
 }
 .screen[hidden] { display: none; }
 
-/* lock screen */
-#lock { background: radial-gradient(120% 80% at 50% 0%, #1d3b52 0%, #0b0f14 70%); justify-content: flex-start; }
-.clock { font-size: 84px; font-weight: 300; letter-spacing: 1px; margin-top: 48px; font-variant-numeric: tabular-nums; }
-.date { font-size: 18px; opacity: 0.85; }
-.owner { margin-top: 6px; font-size: 14px; opacity: 0.55; }
+/* lock screen: the same night sky as the landing page */
+#lock {
+  justify-content: flex-start;
+  background:
+    radial-gradient(1px 1px at 18% 14%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 72% 9%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 84% 30%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 34% 36%, #fff 50%, transparent 51%),
+    radial-gradient(70% 45% at 85% 100%, rgba(120, 160, 255, 0.35), transparent 70%),
+    linear-gradient(180deg, var(--navy-950) 0%, var(--navy-900) 55%, var(--navy-800) 100%);
+}
+.clock { font-size: 88px; font-weight: 300; letter-spacing: -1px; margin-top: 44px; font-variant-numeric: tabular-nums; }
+.date { font-size: 17px; opacity: 0.85; font-family: "Noto Sans Gujarati", var(--sans); }
+.owner { margin-top: 8px; font-size: 13px; opacity: 0.6; padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+.owner:empty { display: none; }
 .arm {
-  margin-top: auto; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
-  border-radius: 999px; padding: 14px 28px; font-size: 17px; cursor: pointer;
+  margin-top: auto; border: 1px solid rgba(255, 255, 255, 0.28); background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px); border-radius: 18px; padding: 14px 26px; font-size: 17px; cursor: pointer;
 }
-.ready { margin-top: auto; font-size: 14px; opacity: 0.6; }
+.ready { margin-top: auto; font-size: 14px; opacity: 0.65; display: flex; align-items: center; gap: 8px; }
+.ready::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2); }
 .call-now {
-  margin-top: 16px; border: 1px dashed rgba(255,255,255,0.35); background: none;
-  border-radius: 999px; padding: 10px 22px; font-size: 15px; cursor: pointer; opacity: 0.8;
+  margin-top: 14px; border: 0; background: #fff; color: var(--navy-900);
+  border-radius: 16px; padding: 12px 22px; font-size: 16px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.6);
 }
-.call-now:disabled { opacity: 0.4; cursor: default; }
-.call-now-msg { margin: 8px 0 0; font-size: 13px; opacity: 0.7; text-align: center; }
+.call-now small { opacity: 0.6; }
+.call-now:disabled { opacity: 0.5; cursor: default; }
+.call-now-msg { margin: 10px 0 0; font-size: 13px; opacity: 0.75; text-align: center; max-width: 300px; }
 
-/* picker */
-#pick { background: #0b0f14; justify-content: flex-start; }
-#pick h1 { font-size: 22px; text-align: center; }
+/* whose phone */
+#pick { justify-content: flex-start; background: linear-gradient(180deg, var(--navy-950), var(--navy-900)); overflow-y: auto; }
+#pick h1 { font-family: var(--serif); font-weight: 400; font-size: 34px; text-align: center; margin: 8px 0 4px; }
 #pick ul { list-style: none; padding: 0; width: 100%; max-width: 420px; }
 #pick a {
-  display: block; padding: 16px; margin: 8px 0; border-radius: 14px; background: #17202a;
-  color: inherit; text-decoration: none; font-size: 18px;
+  display: block; padding: 16px 18px; margin: 10px 0; border-radius: 18px; color: inherit; text-decoration: none; font-size: 17px;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12);
 }
+#pick a:hover { background: rgba(255, 255, 255, 0.12); }
 
 /* calls */
-.call-bg { background: linear-gradient(180deg, #1f4f45 0%, #10261f 55%, #0b0f14 100%); }
-.label { margin: 8px 0 28px; font-size: 16px; opacity: 0.8; text-align: center; }
-.avatar {
-  width: 112px; height: 112px; border-radius: 50%; background: #e9eef0; color: #1f4f45;
-  display: grid; place-items: center; font-size: 40px; font-weight: 700; letter-spacing: 1px;
+.call-bg {
+  background:
+    radial-gradient(80% 50% at 50% 0%, rgba(47, 107, 255, 0.35), transparent 70%),
+    linear-gradient(180deg, var(--navy-800) 0%, var(--navy-900) 45%, var(--navy-950) 100%);
 }
-.avatar.small { width: 84px; height: 84px; font-size: 30px; margin-top: 24px; }
-.caller { margin: 20px 0 4px; font-size: 30px; font-weight: 500; text-align: center; }
-.sub { margin: 0; font-size: 16px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.label { margin: 8px 0 28px; font-size: 15px; opacity: 0.8; text-align: center; }
+.avatar {
+  width: 112px; height: 112px; border-radius: 50%; color: #fff;
+  background: linear-gradient(145deg, var(--blue-500), var(--navy-800));
+  display: grid; place-items: center; font-size: 38px; font-weight: 600; letter-spacing: 1px;
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.06), 0 0 0 16px rgba(255, 255, 255, 0.03);
+}
+#ringing .avatar { animation: ring 1.6s ease-out infinite; }
+@keyframes ring {
+  0% { box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.5), 0 0 0 0 rgba(47, 107, 255, 0.3); }
+  100% { box-shadow: 0 0 0 26px rgba(47, 107, 255, 0), 0 0 0 52px rgba(47, 107, 255, 0); }
+}
+.avatar.small { width: 84px; height: 84px; font-size: 28px; margin-top: 24px; }
+.caller { margin: 20px 0 4px; font-family: var(--serif); font-weight: 400; font-size: 36px; text-align: center; letter-spacing: -0.3px; }
+.sub { margin: 0; font-size: 15px; opacity: 0.75; font-variant-numeric: tabular-nums; }
 
-.answer-row { margin-top: auto; width: 100%; max-width: 360px; display: flex; justify-content: space-between; }
+.answer-row { margin-top: auto; width: 100%; max-width: 330px; display: flex; justify-content: space-between; }
 .action { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 14px; opacity: 0.9; }
 .round {
   width: 72px; height: 72px; border-radius: 50%; border: 0; cursor: pointer;
-  display: grid; place-items: center; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  display: grid; place-items: center; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
 }
 .accept { background: #22c55e; animation: nudge 1.4s ease-in-out infinite; }
 .decline { background: #ef4444; }
 .end { margin-top: auto; }
 @keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-@media (prefers-reduced-motion: reduce) { .accept { animation: none; } }
 
 /* a phone handset drawn in CSS, so no icon font is needed */
 .handset {
@@ -77,15 +106,44 @@ button { font: inherit; color: inherit; }
 
 .grid {
   margin-top: 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px 30px;
-  width: 100%; max-width: 330px;
+  width: 100%; max-width: 320px;
 }
 .key {
   display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: 0;
-  font-size: 13px; opacity: 0.9; cursor: pointer;
+  font-size: 12px; opacity: 0.9; cursor: pointer;
 }
 .key .ico {
-  width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.12);
-  display: grid; place-items: center; font-size: 22px;
+  width: 62px; height: 62px; border-radius: 50%; background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08); display: grid; place-items: center; font-size: 22px;
 }
-.key:disabled { opacity: 0.45; cursor: default; }
-.key.on .ico { background: #f2f5f7; color: #10261f; }
+.key:disabled { opacity: 0.4; cursor: default; }
+.key.on .ico { background: #f2f6ff; color: var(--navy-900); }
+
+/* ---------- laptop: a phone in a frame, with a note beside it ---------- */
+@media (min-width: 820px) and (min-height: 700px) {
+  body {
+    display: flex; align-items: center; justify-content: center; gap: 64px; padding: 24px;
+    background:
+      radial-gradient(1px 1px at 12% 18%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 40% 8%, #fff 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 88% 14%, #fff 50%, transparent 51%),
+      radial-gradient(60% 50% at 80% 110%, rgba(120, 160, 255, 0.35), transparent 70%),
+      linear-gradient(180deg, var(--navy-950), var(--navy-900) 60%, var(--navy-800));
+  }
+  .side { display: flex; flex-direction: column; gap: 14px; max-width: 360px; -webkit-user-select: text; user-select: text; }
+  .side .brand { color: #fff; margin-bottom: 18px; }
+  .side h1 { font-size: 46px; line-height: 1.02; margin: 0; }
+  .side p { margin: 0; line-height: 1.6; color: rgba(255, 255, 255, 0.78); }
+  .side .tip { font-size: 14px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); }
+  .side .btn { align-self: flex-start; margin-top: 8px; }
+  .device {
+    position: relative; inset: auto; flex: none;
+    width: 380px; height: min(800px, calc(100vh - 48px)); border-radius: 48px;
+    border: 10px solid #0a0f1f; box-shadow: 0 0 0 2px #2a3550, 0 40px 90px -30px rgba(0, 0, 0, 0.8);
+  }
+  .device::before {  /* the camera notch */
+    content: ""; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
+    width: 110px; height: 28px; border-radius: 16px; background: #0a0f1f;
+  }
+  .clock { font-size: 76px; }
+}

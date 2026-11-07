@@ -11,7 +11,8 @@ Gemini (free tier) writing her replies. Live demo: https://ugharani.onrender.com
 
 ## Try it in 2 minutes
 
-1. On a laptop open https://ugharani.onrender.com: the owner's app (dues, calls, notes, rules).
+1. On a laptop open https://ugharani.onrender.com (the landing page), then **Owner's desk**
+   (https://ugharani.onrender.com/app/): dues, calls, notes, rules.
 2. On a phone open https://ugharani.onrender.com/phone.html, pick **રમેશભાઈ**, tap once (allows
    sound and the mic). The phone page stands in for the dealer's phone line.
 3. Tap **આ ફોન પર કૉલ કરાવો** (or **ફોન કરો** in the owner's app). The phone rings; answer it.

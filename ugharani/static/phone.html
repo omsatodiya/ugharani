@@ -3,11 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f14">
-  <title>Phone</title>
+  <meta name="theme-color" content="#061233">
+  <title>Dealer's phone · Ugharani</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@300;400;500;600&family=Noto+Sans+Gujarati:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/phone.css">
 </head>
 <body>
+  <!-- On a laptop: the phone in a frame, with a note on what this page is. On a phone: full screen. -->
+  <aside class="side">
+    <a class="brand" href="/"><span class="mark">ઉ</span><span class="brand-name"><b>Ugharani</b><span>Dealer's phone</span></span></a>
+    <h1 class="serif">This is the dealer's phone.</h1>
+    <p>Tap the screen once, then ask Kavya to call. Answer, and talk to her as the dealer would: cut in, ask for a discount, say "એક મિનિટ".</p>
+    <p class="tip">Best on your own mobile: open this page there, so the call uses its mic and earpiece.</p>
+    <a class="btn" href="/app/">Owner's desk →</a>
+  </aside>
+  <main class="device">
   <!-- The customer's phone in the demo: it rings when Genius Polyplast's agent calls. -->
 
   <section id="pick" class="screen" hidden>
@@ -64,6 +78,7 @@
     <p class="sub" id="end-text">કૉલ પૂરો થયો</p>
   </section>
 
+  </main>
   <script src="/phone.js"></script>
 </body>
 </html>
