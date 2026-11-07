@@ -10,7 +10,7 @@ Use a quiet room and the phone's earpiece/speaker at normal volume.
 | 1 | 0:00-0:20 | You, or title card | "Every trader in Gujarat who sells on credit pays someone just to phone dealers for ઉઘરાણી. Ugharani does that call." |
 | 2 | 0:20-0:35 | Laptop: owner's app | Today's dues (રમેશભાઈ ₹1,20,000). Open **Kavya's rules**: 7 days, 15 days for parts, call hours. "The owner decides what she may agree to." |
 | 3 | 0:35-0:45 | Laptop → phone | Tap **ફોન કરો** for રમેશભાઈ. The phone rings; answer. |
-| 4 | 0:45-1:00 | Phone (sound!) | She: "હેલો રમેશભાઈ?" You: "હા બોલો." She introduces herself (recording notice) and asks about ₹1,20,000. |
+| 4 | 0:45-1:00 | Phone (sound!) | She: "હેલો રમેશભાઈ?" You: "હા બોલો." She introduces herself and asks about ₹1,20,000. |
 | 5 | 1:00-1:20 | Phone | **Interrupt** while she's talking: "અરે, મેં તો અડધા આપી દીધા છે!" She stops at once and answers. |
 | 6 | 1:20-1:40 | Phone | **Push her limits**: "બાકીના 30 દિવસ પછી આપું, ને થોડું ડિસ્કાઉન્ટ?" She doesn't agree: "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." |
 | 7 | 1:40-1:55 | Phone | "એક મિનિટ…" (she: "હા જી, વાંધો નહીં." and waits). Then: "હા, શુક્રવારે ₹60,000 RTGS કરી દઈશ." She confirms once and says goodbye. |

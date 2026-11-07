@@ -269,8 +269,8 @@ h2.serif.left { text-align: left; }
 }
 .footer-bar span:last-child { text-align: right; }
 .wordmark {
-  font: 700 clamp(96px, 21vw, 300px)/0.8 var(--sans); letter-spacing: -0.06em; text-align: center;
-  color: rgba(47, 107, 255, 0.12); margin: 24px 0 -0.08em; user-select: none; white-space: nowrap;
+  font: 700 clamp(96px, 21vw, 300px)/1.1 var(--sans); letter-spacing: -0.06em; text-align: center;
+  color: rgba(47, 107, 255, 0.12); margin: 8px 0 0; padding-bottom: 0.06em; user-select: none; white-space: nowrap;
 }
 
 /* ---------- reveal on scroll ---------- */

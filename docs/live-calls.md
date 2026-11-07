@@ -80,7 +80,7 @@ every 20 ms of the customer's audio, so she **pauses** about 0.25 s after they s
 - **decide**, on Gnani's words: her echo, "હા"/"હં", empty, or "હા" answering the question she
   was finishing → `resume`; real words → `clear` and answer. No words at all: resume 0.6 s after
   they stop (a cough), or 2 s if Gnani heard speech. Still talking after 8 s → she stops for them.
-- never during the intro (the recording notice); never in her first 0.6 s (her echo starting).
+- never during the intro (who she is); never in her first 0.6 s (her echo starting).
 
 Silero VAD was the alternative: better at noise vs speech, but it needs onnxruntime and a model
 download, and it can't tell her echo from the customer either; the words decide anyway.

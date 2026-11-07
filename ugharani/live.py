@@ -409,7 +409,7 @@ class LiveCall:
                         text, hang = guard.instead(self.settings, self.customer), False
                         await ready.put((text, self._fetch(text)))
                         break
-                    if after_lead_in:  # "...રેકોર્ડ થાય છે હં. જી. તમારું..." would stutter
+                    if after_lead_in:  # "...પોલીપ્લાસ્ટમાંથી. જી. તમારું..." would stutter
                         after_lead_in = False
                         if text in ACKS:
                             continue
@@ -460,7 +460,7 @@ class LiveCall:
                     self._turn_spoke = True
                 said(text)  # (an interruption trims what wasn't heard)
                 if text == lead_in:
-                    self._protected_until = float("inf")  # the recording notice is said in full
+                    self._protected_until = float("inf")  # the intro is said in full
                 await self._play(text, audio)
                 if text == lead_in:
                     self._protected_until = self._speaking_until
@@ -680,7 +680,7 @@ class LiveCall:
             over_agent = self._over_agent or paused
             if started is not None and paused:
                 started = min(started, self._paused_at)  # (in her audio's time)
-            # The opening carries the "this call is recorded" notice: it is never cut short. Words
+            # The intro (who she is) is never cut short. Words
             # said over it are answered once it ends.
             over_opening = (started if started is not None else self._now()) < self._protected_until
             text = (event.get("text") or "").strip()
@@ -742,7 +742,7 @@ class LiveCall:
     async def _greet(self) -> None:
         """Like a person calling: let them say "હેલો", ask for them by name, wait, then say who she is.
 
-        The intro carries the recording notice, so it can't be interrupted; the reason for the call is
+        The intro (who she is) can't be interrupted; the reason for the call is
         written by Gemini while the intro plays, and follows it without a gap.
         """
         self._stage = "hello"

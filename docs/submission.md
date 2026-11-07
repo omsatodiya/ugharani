@@ -13,7 +13,7 @@ nobody has automated.
 **What we built.** કાવ્યા, an AI accounts assistant for Genius Polyplast (a real pipe-fittings
 maker in Gondal, used with permission). The owner sees who is due today and taps "call"; Kavya
 phones the dealer (a browser phone stands in for the phone line), greets them like a person
-("હેલો રમેશભાઈ?"), says the call is recorded, and gets a date, amount and payment mode in
+("હેલો રમેશભાઈ?"), and gets a date, amount and payment mode in
 everyday Saurashtra Gujarati, or Hindi if the dealer speaks Hindi. After the call the owner's
 dashboard shows the outcome, the promise and anything the owner must do.
 
@@ -56,7 +56,7 @@ I built કાવ્યા, an AI voice agent that makes those ઉઘરાણ�
 Genius Polyplast, a real pipe-fittings manufacturer in Gondal.
 
 🎥 In the video she:
-✅ greets the dealer like a person and says the call is recorded
+✅ greets the dealer like a person and waits for their "હા"
 ✅ stops the moment you talk over her, and carries on after a "હા"
 ✅ gets a date, an amount and RTGS or cheque
 ✅ politely refuses a discount or 30 more days ("શેઠ તમને ફોન કરશે"): the owner's limits are

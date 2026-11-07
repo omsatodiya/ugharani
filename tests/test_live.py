@@ -15,8 +15,8 @@ from ugharani import gnani, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
-INTRO = "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં."
-INTRO_NO = "નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી. કૉલ રેકોર્ડ થાય છે હં."  # after "કોણ?" etc.
+INTRO = "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."
+INTRO_NO = "નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."  # after "કોણ?" etc.
 
 
 class FakeSTT:
@@ -640,7 +640,7 @@ def test_short_phrases_are_echo_only_if_she_said_them_in_that_order():
 
 
 def test_the_intro_is_never_cut_short(phone):
-    """It carries the "this call is recorded" notice; words said over it are answered after it."""
+    """Who she is is said in full; words said over it are answered after it."""
     client, call_id, rec = phone
     speech._save(speech.clip_key(INTRO), LOUD * 32000)  # the intro plays for two seconds
     rec["replies"] = ["₹1,00,000 બાકી છે.", "સારું. આવજો. <END>"]
@@ -871,7 +871,7 @@ def test_no_pause_during_the_intro_or_as_her_echo_starts(phone):
         say(ws, "હા")
         until(ws, {"text": INTRO})
         time.sleep(live.ECHO_ONSET + 0.1)
-        talk(ws, 0.5)  # over the recording notice
+        talk(ws, 0.5)  # over the intro
         hush(ws, 0.4)
         say(ws, "હા બોલો")
         events, _ = until(ws, {"type": "end"})

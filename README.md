@@ -33,8 +33,7 @@ phone page (mic, 16 kHz PCM) ──websocket──▶ server ──▶ Gnani liv
 ```
 
 What makes it sound like a person (details in `docs/live-calls.md`):
-- **Opening like a real call**: "હેલો રમેશભાઈ?", waits for their "હા", then who she is (with the
-  recording notice said in passing).
+- **Opening like a real call**: "હેલો રમેશભાઈ?", waits for their "હા", then who she is.
 - **Fast turns**: replies are streamed and spoken sentence by sentence; short acknowledgements
   ("જી.", "સારું.") and fillers play from bundled clips at once; Timbre's padded silences are cut.
 - **Talked over**: she pauses within ~0.25 s; "હા"/"હં", a cough or her own echo let her go on

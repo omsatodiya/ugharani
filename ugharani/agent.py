@@ -23,13 +23,12 @@ def greeting(customer: dict) -> str:
 
 
 def intro(settings: dict, answered_yes: bool = True) -> str:
-    """Who she is, once they answer, with the recording notice said in passing.
+    """Who she is, once they answer.
 
     "હા નમસ્તે" after their "હા"/"બોલો"; plain "નમસ્તે" after "કોણ?" or someone else answering.
     """
     yes = "હા " if answered_yes else ""
-    return (f"{yes}નમસ્તે. હું {settings['agent_name']} બોલું છું {settings['business_name_spoken']}માંથી. "
-            "કૉલ રેકોર્ડ થાય છે હં.")
+    return f"{yes}નમસ્તે. હું {settings['agent_name']} બોલું છું {settings['business_name_spoken']}માંથી."
 
 
 def fallback_ask(customer: dict) -> str:
@@ -81,7 +80,7 @@ def system_prompt(settings: dict, customer: dict, today: date, last_call: dict |
     return f"""You are {settings['agent_name']}, from the accounts office of {settings['business_name']} \
 ({settings['business_name_spoken']}), {settings['business_place']}, Gujarat. The company makes \
 {settings['products']} and sells to hardware and sanitary dealers. You are on a phone call to remind a \
-customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said the call is recorded.
+customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said who you are.
 
 CUSTOMER
 Name: {customer['name']}{f", {customer['firm']}" if customer.get('firm') else ""}\
