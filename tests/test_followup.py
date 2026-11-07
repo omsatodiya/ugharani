@@ -147,3 +147,15 @@ def test_part_payments_may_not_end_sooner_than_a_whole_one(conn):
     with pytest.raises(ValueError):
         followup.update_settings(conn, {"promise_days": 20})  # (split_days is 15)
     assert followup.update_settings(conn, {"promise_days": 20, "split_days": 30})["split_days"] == 30
+
+
+def test_the_demo_starts_with_a_few_past_calls(conn):
+    from ugharani.seed import seed
+    today = date(2026, 11, 7)
+    seed(conn, today)
+    calls = followup.list_calls(conn)
+    assert [c["outcome"] for c in calls] == ["promised", "handover", "callback", None]
+    assert calls[1]["owner_action"] and calls[1]["flags"]  # the owner has something to do
+    assert [q["customer"] for q in followup.to_call(conn, today)] == ["રમેશભાઈ"]  # still due today
+    seed(conn, today)
+    assert len(followup.list_calls(conn)) == 4  # (never twice)
