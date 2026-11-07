@@ -1,0 +1,19 @@
+{
+  "name": "ugharani-launch-video",
+  "private": true,
+  "description": "Ugharani launch video, made with Remotion",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Launch out/ugharani-launch-16x9.mp4 --concurrency=2 && remotion render LaunchSquare out/ugharani-launch-1x1.mp4 --concurrency=2",
+    "still": "remotion still Launch out/still.png --frame=60"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.541",
+    "@remotion/google-fonts": "^4.0.541",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.541",
+    "typescript": "^7.0.2"
+  }
+}
