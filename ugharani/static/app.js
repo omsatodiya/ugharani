@@ -1,5 +1,8 @@
-// Ugharani PWA: record -> /entries/voice -> answer missing fields -> confirm -> /entries.
-// Audio is recorded as 16 kHz mono WAV in the browser, a format Prisma takes on every platform.
+// The owner's desk: Today (dues, tasks, next calls), Calls (queue and log), Ledger (voice entries
+// and balances) and Settings (Kavya's rules, call hours, business, demo date).
+// Voice entries: record 16 kHz WAV -> /entries/voice -> answer missing fields -> confirm -> /entries.
+
+import { audioButton, datePicker, icon } from "/ui.js";
 
 const $ = (id) => document.getElementById(id);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -11,6 +14,7 @@ let draft = null;          // unconfirmed entry from the last recording
 let reminder = null;       // reminder shown in the dialog
 let recorder = null;       // active recording
 let audioUnlocked = false;
+let summaryAudio = null, replyAudio = null;
 
 // ---------- small helpers ----------
 
@@ -45,14 +49,23 @@ function toast(message) {
   toastTimer = setTimeout(() => (t.hidden = true), 3500);
 }
 
-function demoToday() {
-  return $("today").value || null;
-}
+// The demo date ("treat today as"), kept in this browser only.
+let demoDate = null;
+try { demoDate = localStorage.getItem("ugharani-today") || null; } catch {}
 
 function withToday(path) {
-  const today = demoToday();
-  return today ? `${path}?today=${today}` : path;
+  return demoDate ? `${path}${path.includes("?") ? "&" : "?"}today=${demoDate}` : path;
 }
+
+// The owner's demo key (?k=... once): calls made with it don't count against the public budget.
+const ownerKey = (() => {
+  const k = new URLSearchParams(location.search).get("k");
+  try {
+    if (k) localStorage.setItem("ugharani-key", k);
+    return k || localStorage.getItem("ugharani-key");
+  } catch { return k; }
+})();
+const withKey = (path) => (ownerKey ? `${path}${path.includes("?") ? "&" : "?"}k=${encodeURIComponent(ownerKey)}` : path);
 
 async function api(path, options) {
   const resp = await fetch(path, options);
@@ -64,6 +77,22 @@ async function api(path, options) {
   return body;
 }
 
+const putJson = (path, body) =>
+  api(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// ---------- sections (hash routing: #today, #calls, #ledger, #settings) ----------
+
+const VIEWS = ["today", "calls", "ledger", "settings"];
+
+function showView() {
+  const name = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "today";
+  for (const v of VIEWS) $(`view-${v}`).hidden = v !== name;
+  for (const a of document.querySelectorAll("[data-view]")) a.classList.toggle("on", a.dataset.view === name);
+  // The mic adds ledger entries: shown on Today and Ledger only.
+  $("dock").hidden = !(name === "today" || name === "ledger") || !navigator.mediaDevices?.getUserMedia;
+  window.scrollTo(0, 0);
+}
+
 // ---------- playback ----------
 
 // iOS only lets audio play after a tap; play a silent clip on the first tap to unlock it.
@@ -72,20 +101,10 @@ function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
   const p = $("player");
-  p.src = SILENT_WAV;
-  p.play().catch(() => {});
-}
-
-function play(url, button) {
-  if (!url) return;
-  const p = $("player");
-  p.src = url;
-  p.play().catch(() => button && (button.hidden = false));  // autoplay blocked: leave the ▶ button
-}
-
-function bindPlay(button, url) {
-  button.hidden = !url;
-  button.onclick = () => play(url);
+  if (!p.src) {
+    p.src = SILENT_WAV;
+    p.play().catch(() => {});
+  }
 }
 
 // ---------- recording (WAV, 16 kHz mono) ----------
@@ -153,6 +172,7 @@ function setMic(state) {
   mic.classList.toggle("recording", state === "recording");
   mic.classList.toggle("busy", state === "busy");
   mic.disabled = state === "busy";
+  $("mic-glyph").firstElementChild.setAttribute("href", `/icons.svg#${state === "recording" ? "square" : "mic"}`);
   $("mic-label").textContent = { idle: draft?.missing ? "જવાબ" : draft ? "સુધારો" : "બોલો", recording: "રોકો", busy: "…" }[state];
   mic.setAttribute("aria-label", { idle: "Tap to speak", recording: "Tap to stop", busy: "Working" }[state]);
 }
@@ -160,10 +180,11 @@ function setMic(state) {
 async function onMic() {
   unlockAudio();
   if (recorder) return stopRecording();
+  if (location.hash !== "#ledger") location.hash = "#ledger";  // the entry appears in the ledger
   try {
     recorder = await startRecording();
     setMic("recording");
-  } catch (e) {
+  } catch {
     recorder = null;
     toast("માઇકની પરવાનગી આપો · Allow microphone access");
   }
@@ -195,13 +216,14 @@ async function sendRecording(wav) {
   // A follow-up recording either answers the question or fixes a misheard field ("ના, સાઠ દિવસ").
   if (draft) form.append("draft", JSON.stringify(draft.fields));
   const body = await api("/entries/voice", { method: "POST", body: form });
-  draft = { fields: body.draft, missing: body.missing.length ? body.missing : null };
+  draft = { fields: body.draft, missing: body.missing.length ? body.missing : null, audio: body.audio };
   showConvo(body);
-  play(body.audio, $("play-reply"));
+  if (body.audio) replyAudio.play();
 }
 
 function showConvo(body) {
   $("convo").hidden = false;
+  $("how-to").hidden = true;
   $("heard").textContent = `તમે બોલ્યા: “${body.transcript}”`;
   const d = body.draft;
   const values = {
@@ -216,7 +238,7 @@ function showConvo(body) {
   }
   $("draft").replaceChildren(...rows);
   $("reply-say").textContent = body.say;
-  bindPlay($("play-reply"), body.audio);
+  $("play-reply").hidden = !body.audio;
   $("answer-hint").textContent = body.missing.length
     ? "જવાબ બોલવા માટે માઇક દબાવો · Tap the mic to answer"
     : "કંઈ ખોટું હોય તો માઇક દબાવી ફક્ત તે જ બોલો, જેમ કે “ના, સાઠ દિવસ” · Wrong? Tap the mic and say just the fix";
@@ -228,6 +250,7 @@ function showConvo(body) {
 function clearConvo() {
   draft = null;
   $("convo").hidden = true;
+  $("how-to").hidden = false;
   setMic("idle");
 }
 
@@ -241,8 +264,9 @@ async function onSave() {
       body: JSON.stringify(draft.fields),
     });
     clearConvo();
-    toast("સાચવ્યું ✓ · Saved");
+    toast("સાચવ્યું · Saved");
     await refresh();
+    refreshCalls();
   } catch (e) {
     toast(`ભૂલ · ${e.message}`);
   } finally {
@@ -250,36 +274,38 @@ async function onSave() {
   }
 }
 
-// ---------- summary, balances, reminders ----------
+// ---------- dues, balances, reminders ----------
+
+let summary = null;
 
 async function refresh() {
-  const [summary, balances] = await Promise.all([api(withToday("/summary")), api("/balances")]);
-  $("summary-say").textContent = summary.say;
-  bindPlay($("play-summary"), summary.audio);
-  $("due-items").replaceChildren(
-    ...summary.items.map((i) =>
-      el("li", {},
-        el("div", { class: "who" },
-          el("div", { class: "name" }, i.buyer),
-          el("div", { class: "meta" }, el("span", { class: `chip ${i.status}` }, STATUS[i.status]), formatDate(i.due_date))),
-        el("span", { class: "amt" }, rupees.format(i.amount)),
-        el("button", { class: "btn small", onclick: () => openReminder(i.buyer) }, "યાદ અપાવો"),
-      ),
-    ),
-  );
+  const [s, balances] = await Promise.all([api(withToday("/summary")), api("/balances")]);
+  summary = s;
+  $("summary-say").textContent = s.say;
+  $("play-summary").hidden = !s.audio;
+  const sum = (status) => s.items.filter((i) => i.status === status).reduce((n, i) => n + i.amount, 0);
+  $("st-due").textContent = rupees.format(sum("today"));
+  $("st-over").textContent = rupees.format(sum("overdue"));
+  $("due-items").replaceChildren(...(s.items.length
+    ? s.items.map((i) =>
+        el("li", {},
+          el("div", { class: "who" },
+            el("div", { class: "name" }, i.buyer),
+            el("div", { class: "meta" }, el("span", { class: `chip ${i.status}` }, STATUS[i.status]), formatDate(i.due_date))),
+          el("span", { class: "amt" }, rupees.format(i.amount)),
+          el("button", { class: "btn small", onclick: () => openReminder(i.buyer) }, icon("message"), "યાદ અપાવો"),
+        ))
+    : [el("li", {}, el("span", { class: "empty" }, "આજે કંઈ બાકી નથી · Nothing due"))]));
   const open = balances.filter((b) => b.balance > 0);
-  $("balances").replaceChildren(
-    ...(open.length
-      ? open.map((b) =>
-          el("li", {},
-            el("div", { class: "who" },
-              el("div", { class: "name" }, b.buyer),
-              b.earliest_due ? el("div", { class: "meta" }, `પહેલી મુદત ${formatDate(b.earliest_due)}`) : null),
-            el("span", { class: "amt" }, rupees.format(b.balance)),
-          ),
-        )
-      : [el("li", {}, el("span", { class: "empty" }, "હજી કોઈ ઉધાર નથી · No open credit yet"))]),
-  );
+  $("balances").replaceChildren(...(open.length
+    ? open.map((b) =>
+        el("li", {},
+          el("div", { class: "who" },
+            el("div", { class: "name" }, b.buyer),
+            b.earliest_due ? el("div", { class: "meta" }, `પહેલી મુદત ${formatDate(b.earliest_due)}`) : null),
+          el("span", { class: "amt" }, rupees.format(b.balance)),
+        ))
+    : [el("li", {}, el("span", { class: "empty" }, "હજી કોઈ ઉધાર નથી · No open credit yet"))]));
 }
 
 async function openReminder(buyer) {
@@ -292,7 +318,6 @@ async function openReminder(buyer) {
   $("reminder-say").textContent = reminder.say;
   $("play-reminder").hidden = !reminder.audio;
   $("reminder").showModal();
-  play(reminder.audio);
 }
 
 async function shareReminder() {
@@ -328,34 +353,11 @@ const REASON = { overdue: "મુદત વીતી", due_today: "આજે મ
 let callsTimer;
 let hours = null;
 
-// The owner's demo key (?k=... once): calls made with it don't count against the public budget.
-const ownerKey = (() => {
-  const k = new URLSearchParams(location.search).get("k");
-  try {
-    if (k) localStorage.setItem("ugharani-key", k);
-    return k || localStorage.getItem("ugharani-key");
-  } catch { return k; }
-})();
-const withKey = (path) => (ownerKey ? `${path}${path.includes("?") ? "&" : "?"}k=${encodeURIComponent(ownerKey)}` : path);
-
 function when(iso) {
   return new Date(iso).toLocaleString("gu-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-function icon(name) {
-  // A line icon from /icons.svg (no emoji: they look different on every phone).
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "i");
-  svg.setAttribute("aria-hidden", "true");
-  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  use.setAttribute("href", `/icons.svg#${name}`);
-  svg.append(use);
-  return svg;
-}
-
-function chip([label, kind]) {
-  return el("span", { class: `chip ${kind}` }, label);
-}
+const chip = ([label, kind]) => el("span", { class: `chip ${kind}` }, label);
 
 function phoneLink(name) {
   // The demo's stand-in for the customer's phone: open it (on another device) to take the call.
@@ -367,7 +369,7 @@ async function callNow(name, button) {
   button.disabled = true;
   try {
     await api(withKey("/calls"), { method: "POST", headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ customer: name }) });
+                                   body: JSON.stringify({ customer: name }) });
     toast(`${name}ને ફોન લાગી રહ્યો છે · Calling (open their phone)`);
   } catch (e) {
     toast(`ભૂલ · ${e.message}`);
@@ -377,7 +379,7 @@ async function callNow(name, button) {
 
 async function runCalls() {
   const params = new URLSearchParams();
-  if (demoToday()) params.set("today", demoToday());
+  if (demoDate) params.set("today", demoDate);
   if (!hours?.open) params.set("anytime", "true"); // outside call hours: a demo run
   if (ownerKey) params.set("k", ownerKey);
   try {
@@ -387,6 +389,16 @@ async function runCalls() {
     toast(`ભૂલ · ${e.message}`);
   }
   refreshCalls();
+}
+
+function queueItem(q, busy) {
+  return el("li", {},
+    el("div", { class: "who" },
+      el("div", { class: "name" }, q.customer),
+      el("div", { class: "meta" }, el("span", { class: "chip overdue" }, REASON[q.reason] || q.reason), formatDate(q.due_date))),
+    el("span", { class: "amt" }, rupees.format(q.amount)),
+    busy.has(q.customer) ? phoneLink(q.customer)
+      : el("button", { class: "btn small", onclick: (e) => callNow(q.customer, e.currentTarget) }, icon("phone"), "ફોન કરો"));
 }
 
 function callItem(c) {
@@ -434,6 +446,8 @@ function tasksFrom(calls) {
   return tasks;
 }
 
+const empty = (text) => [el("li", {}, el("span", { class: "empty" }, text))];
+
 async function refreshCalls() {
   clearTimeout(callsTimer);
   let calls = [];
@@ -443,25 +457,18 @@ async function refreshCalls() {
     hours = h;
     const busy = new Set(log.filter((c) => c.status === "ringing" || c.status === "in_progress").map((c) => c.customer));
     $("demo-left").hidden = h.demo_left == null;
-    $("demo-left").textContent = `આજે ડેમો ફોન બાકી: ${h.demo_left} · Demo calls left today: ${h.demo_left}`;
+    $("demo-left").textContent = `ડેમો ફોન બાકી ${h.demo_left} · ${h.demo_left} demo calls left`;
     $("hours-note").hidden = h.open;
     $("hours-note").textContent = `ઓટો ફોન ${h.hours.replace(",", " અને ")} વચ્ચે જ જાય${h.sunday ? "" : ", રવિવારે નહીં"}; અત્યારે "બધાને ફોન" ડેમો તરીકે જશે. · Outside call hours: "Call all" runs as a demo.`;
     $("run-calls").disabled = !queue.length;
-    $("queue").replaceChildren(...(queue.length
-      ? queue.map((q) => el("li", {},
-          el("div", { class: "who" },
-            el("div", { class: "name" }, q.customer),
-            el("div", { class: "meta" }, el("span", { class: "chip overdue" }, REASON[q.reason] || q.reason), formatDate(q.due_date))),
-          el("span", { class: "amt" }, rupees.format(q.amount)),
-          busy.has(q.customer) ? phoneLink(q.customer)
-            : el("button", { class: "btn small", onclick: (e) => callNow(q.customer, e.currentTarget) }, "ફોન કરો")))
-      : [el("li", {}, el("span", { class: "empty" }, "આજે કોઈને ફોન કરવાનો નથી · Nobody to call today"))]));
-    $("call-log").replaceChildren(...(log.length
-      ? log.slice(0, 20).map(callItem)
-      : [el("li", {}, el("span", { class: "empty" }, "હજી કોઈ ફોન નથી કર્યો · No calls yet"))]));
+    const none = "આજે કોઈને ફોન કરવાનો નથી · Nobody to call today";
+    $("queue").replaceChildren(...(queue.length ? queue.map((q) => queueItem(q, busy)) : empty(none)));
+    $("next-calls").replaceChildren(...(queue.length ? queue.slice(0, 3).map((q) => queueItem(q, busy)) : empty(none)));
+    $("call-log").replaceChildren(...(log.length ? log.slice(0, 20).map(callItem) : empty("હજી કોઈ ફોન નથી કર્યો · No calls yet")));
     const tasks = tasksFrom(log);
-    $("todo").hidden = !tasks.length;
-    $("tasks").replaceChildren(...tasks);
+    $("tasks").replaceChildren(...(tasks.length ? tasks : empty("કંઈ બાકી નથી · Nothing for you")));
+    $("st-calls").textContent = queue.length;
+    $("st-tasks").textContent = tasks.length;
   } catch (e) {
     toast(`ભૂલ · ${e.message}`);
   }
@@ -471,70 +478,128 @@ async function refreshCalls() {
   callsTimer = setTimeout(refreshCalls, active ? 3000 : 20000);
 }
 
-// ---------- the owner's rules for Kavya ----------
+// ---------- settings ----------
 
-const RULE_KEYS = ["promise_days", "split_days", "call_hours", "holidays", "call_on_sunday", "auto_calls", "tone"];
+let holidays = [];
 
-function rulesSay(r) {
-  return `કાવ્યા આખા પેમેન્ટ માટે ${r.promise_days} દિવસ સુધીનો વાયદો, અને ભાગમાં છેલ્લો ભાગ ${r.split_days} દિવસમાં હોય તો હા પાડે. ` +
-    `ડિસ્કાઉન્ટ, વ્યાજ કે લાંબી મુદત: "${r.owner_name} તમને ફોન કરશે." · She agrees to these on her own; anything more comes to you.`;
+function renderHolidays() {
+  holidays.sort();
+  $("holiday-list").replaceChildren(...holidays.map((d) =>
+    el("li", {}, new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+      el("button", { type: "button", "aria-label": `Remove ${d}`, onclick: () => { holidays = holidays.filter((x) => x !== d); renderHolidays(); } },
+        icon("x")))));
 }
 
-async function loadRules() {
-  const r = await api("/settings");
-  const form = $("rules-form");
-  for (const k of RULE_KEYS) {
-    const input = form.elements[k];
-    if (input.type === "checkbox") input.checked = !!r[k];
-    else input.value = r[k];
+function rulesSay(r) {
+  return `She agrees to a whole payment within ${r.promise_days} days, or parts if all of it comes within ${r.split_days} days. ` +
+    `Anything more: "${r.owner_name} તમને ફોન કરશે."`;
+}
+
+function fillSettings(r) {
+  for (const form of document.querySelectorAll("form.set")) {
+    for (const k of form.dataset.keys.split(" ")) {
+      const input = form.elements[k];
+      if (!input) continue;
+      if (input instanceof RadioNodeList) input.value = r[k];
+      else if (input.type === "checkbox") input.checked = !!r[k];
+      else input.value = r[k];
+    }
   }
+  const [one = "", two = ""] = r.call_hours.split(",");
+  [$("h1-from").value, $("h1-to").value] = one.split("-");
+  [$("h2-from").value, $("h2-to").value] = two ? two.split("-") : ["", ""];
+  holidays = r.holidays ? r.holidays.split(",") : [];
+  renderHolidays();
   $("rules-say").textContent = rulesSay(r);
 }
 
-async function saveRules(e) {
-  e.preventDefault();
-  const form = $("rules-form");
+function formChanges(form) {
   const changes = {};
-  for (const k of RULE_KEYS) {
-    const input = form.elements[k];
-    changes[k] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
+  for (const k of form.dataset.keys.split(" ")) {
+    if (k === "call_hours") {
+      const spans = [[$("h1-from").value, $("h1-to").value], [$("h2-from").value, $("h2-to").value]]
+        .filter(([a, b]) => a && b).map(([a, b]) => `${a}-${b}`);
+      if (!spans.length) throw new Error("ઓછામાં ઓછો એક સમય આપો · Set at least one call window");
+      changes.call_hours = spans.join(",");
+    } else if (k === "holidays") {
+      changes.holidays = holidays.join(",");
+    } else {
+      const input = form.elements[k];
+      changes[k] = input instanceof RadioNodeList ? input.value
+        : input.type === "checkbox" ? input.checked
+        : input.type === "number" ? Number(input.value) : input.value.trim();
+    }
   }
+  return changes;
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
   try {
-    const r = await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
-                                       body: JSON.stringify(changes) });
-    $("rules-say").textContent = rulesSay(r);
-    toast("નિયમો સચવાયા · Rules saved");
+    const r = await putJson("/settings", formChanges(form));
+    fillSettings(r);
+    toast("સચવાયું · Saved");
     refreshCalls();
   } catch (err) {
     toast(`ભૂલ · ${err.message}`);
+  } finally {
+    button.disabled = false;
   }
+}
+
+function showDemoDate() {
+  const flag = $("demo-flag");
+  flag.hidden = !demoDate;
+  if (demoDate) flag.lastElementChild.textContent = `ડેમો: ${formatDate(demoDate)}`;
+  $("today-line").textContent = demoDate
+    ? `Showing dues as if today were ${new Date(demoDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long" })}.`
+    : "Today's dues, Kavya's calls and what's left for you.";
 }
 
 // ---------- start ----------
 
 function init() {
-  try {
-    const saved = localStorage.getItem("ugharani-today");
-    if (saved) $("today").value = saved;
-  } catch {}
-  $("today").addEventListener("change", () => {
-    try { localStorage.setItem("ugharani-today", $("today").value); } catch {}
-    refresh().catch((e) => toast(`ભૂલ · ${e.message}`));
-    refreshCalls();
+  window.addEventListener("hashchange", showView);
+  showView();
+
+  const player = $("player");
+  summaryAudio = audioButton($("play-summary"), player, () => summary?.audio);
+  replyAudio = audioButton($("play-reply"), player, () => draft?.audio);
+  audioButton($("play-reminder"), player, () => reminder?.audio);
+
+  datePicker($("demo-picker"), {
+    value: demoDate, placeholder: "Real today", clearable: true,
+    onChange(iso) {
+      demoDate = iso;
+      try { iso ? localStorage.setItem("ugharani-today", iso) : localStorage.removeItem("ugharani-today"); } catch {}
+      showDemoDate();
+      refresh().catch((e) => toast(`ભૂલ · ${e.message}`));
+      refreshCalls();
+    },
   });
+  const holidayPicker = datePicker($("holiday-picker"), {
+    placeholder: "તહેવાર ઉમેરો · Add a festival day",
+    onChange(iso) {
+      if (iso && !holidays.includes(iso)) holidays.push(iso);
+      renderHolidays();
+      holidayPicker.value = null;
+    },
+  });
+  showDemoDate();
+
+  for (const form of document.querySelectorAll("form.set")) form.addEventListener("submit", saveSettings);
+  api("/settings").then(fillSettings).catch(() => {});
+
   $("run-calls").addEventListener("click", runCalls);
-  $("rules-form").addEventListener("submit", saveRules);
-  loadRules().catch(() => {});
   $("mic").addEventListener("click", onMic);
   $("save").addEventListener("click", onSave);
   $("cancel").addEventListener("click", clearConvo);
-  $("play-reminder").addEventListener("click", () => play(reminder?.audio));
   $("share-reminder").addEventListener("click", shareReminder);
-  $("close-reminder").addEventListener("click", () => $("reminder").close());
-  if (!navigator.mediaDevices?.getUserMedia) {
-    $("mic").disabled = true;
-    toast("આ બ્રાઉઝરમાં માઇક નથી ચાલતું · This browser can't record");
-  }
+  $("close-reminder").addEventListener("click", () => { player.pause(); $("reminder").close(); });
+
   refresh().catch((e) => {
     $("summary-say").textContent = "સર્વર સાથે જોડાણ નથી · Can't reach the server";
     toast(e.message);

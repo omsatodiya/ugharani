@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Owner's desk · Ugharani</title>
-  <meta name="description" content="The owner's desk: dues, Kavya's calls and notes, and her rules.">
+  <meta name="description" content="The owner's desk: dues, Kavya's calls and notes, the ledger and her settings.">
   <meta name="theme-color" content="#0b1f4d">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -13,6 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body class="sky">
@@ -22,119 +23,219 @@
         <span class="mark">ઉ</span>
         <span class="brand-name"><b>Ugharani</b><span>Owner's desk</span></span>
       </a>
-      <label class="demo-date" title="Demo date: jump ahead to show dues">
-        <span>તારીખ · Date</span>
-        <input type="date" id="today">
-      </label>
+      <nav class="tabs" id="tabs" aria-label="Sections">
+        <a href="#today" data-view="today"><svg class="i"><use href="/icons.svg#home"/></svg>આજે <small>Today</small></a>
+        <a href="#calls" data-view="calls"><svg class="i"><use href="/icons.svg#phone"/></svg>ફોન <small>Calls</small></a>
+        <a href="#ledger" data-view="ledger"><svg class="i"><use href="/icons.svg#book"/></svg>ખાતું <small>Ledger</small></a>
+        <a href="#settings" data-view="settings"><svg class="i"><use href="/icons.svg#settings"/></svg>સેટિંગ્સ <small>Settings</small></a>
+      </nav>
+      <a class="demo-flag" id="demo-flag" href="#settings" hidden><svg class="i"><use href="/icons.svg#calendar"/></svg><span></span></a>
     </div>
   </header>
 
-  <section class="intro">
-    <h1 class="serif">નમસ્તે, શેઠ.</h1>
-    <p>Today's dues, Kavya's calls and what's left for you.</p>
-  </section>
-
   <main>
-    <section class="card convo" id="convo" hidden aria-live="polite">
-      <div class="card-head">
-        <h2>નવી એન્ટ્રી <small>New entry</small></h2>
-        <button class="icon-btn" id="play-reply" aria-label="Play reply" hidden><svg class="i" aria-hidden="true"><use href="/icons.svg#play"/></svg></button>
+    <!-- ================= Today ================= -->
+    <section class="view" id="view-today" aria-labelledby="t-today">
+      <div class="page-head">
+        <div>
+          <h1 class="serif" id="t-today">નમસ્તે, શેઠ.</h1>
+          <p id="today-line">Today's dues, Kavya's calls and what's left for you.</p>
+        </div>
       </div>
-      <p class="heard" id="heard"></p>
-      <dl class="draft" id="draft"></dl>
-      <p class="say" id="reply-say"></p>
-      <p class="hint" id="answer-hint" hidden>જવાબ બોલવા માટે માઇક દબાવો · Tap the mic to answer</p>
-      <div class="actions" id="confirm" hidden>
-        <button class="btn primary" id="save">હા, સાચવો <small>Save</small></button>
-        <button class="btn" id="cancel">ના, રદ કરો <small>Discard</small></button>
+
+      <div class="stats" id="stats">
+        <div class="stat"><span class="stat-ico"><svg class="i"><use href="/icons.svg#indian-rupee"/></svg></span><b id="st-due">–</b><span>આજે આવવાના · Due today</span></div>
+        <div class="stat"><span class="stat-ico bad"><svg class="i"><use href="/icons.svg#clock"/></svg></span><b id="st-over">–</b><span>મુદત વીતી · Overdue</span></div>
+        <div class="stat"><span class="stat-ico"><svg class="i"><use href="/icons.svg#phone-call"/></svg></span><b id="st-calls">–</b><span>ફોન કરવાના · To call</span></div>
+        <div class="stat"><span class="stat-ico warn"><svg class="i"><use href="/icons.svg#hand"/></svg></span><b id="st-tasks">–</b><span>તમારે કરવાનું · For you</span></div>
+      </div>
+
+      <div class="cols">
+        <section class="card">
+          <div class="card-head">
+            <h2>આજની ઉઘરાણી <small>Today's dues</small></h2>
+            <button class="icon-btn" id="play-summary" hidden></button>
+          </div>
+          <p class="say" id="summary-say">લોડ થાય છે…</p>
+          <ul class="items" id="due-items"></ul>
+        </section>
+
+        <div class="stack">
+          <section class="card" id="todo">
+            <div class="card-head"><h2>તમારે કરવાનું <small>For you</small></h2></div>
+            <ul class="items" id="tasks"></ul>
+          </section>
+          <section class="card">
+            <div class="card-head">
+              <h2>હવે પછીના ફોન <small>Next calls</small></h2>
+              <a class="btn small" href="#calls">બધા <small>All</small><svg class="i"><use href="/icons.svg#arrow-right"/></svg></a>
+            </div>
+            <ul class="items" id="next-calls"></ul>
+          </section>
+        </div>
       </div>
     </section>
 
-    <section class="card" id="summary" aria-live="polite">
-      <div class="card-head">
-        <h2>આજની ઉઘરાણી <small>Today's dues</small></h2>
-        <button class="icon-btn" id="play-summary" aria-label="Play summary" hidden><svg class="i" aria-hidden="true"><use href="/icons.svg#play"/></svg></button>
+    <!-- ================= Calls ================= -->
+    <section class="view" id="view-calls" aria-labelledby="t-calls" hidden>
+      <div class="page-head">
+        <div>
+          <h1 class="serif" id="t-calls">ફોન</h1>
+          <p>Who Kavya calls today, and what came of every call.</p>
+        </div>
+        <button class="btn primary" id="run-calls"><svg class="i"><use href="/icons.svg#phone-call"/></svg>બધાને ફોન <small>Call all</small></button>
       </div>
-      <p class="say" id="summary-say">લોડ થાય છે…</p>
-      <ul class="items" id="due-items"></ul>
+      <p class="banner" id="hours-note" hidden></p>
+      <div class="cols">
+        <section class="card">
+          <div class="card-head"><h2>આજના ફોન <small>Calls today</small></h2><span class="muted" id="demo-left" hidden></span></div>
+          <ul class="items" id="queue"></ul>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>ફોનનો હિસાબ <small>Call log</small></h2></div>
+          <ul class="items calls" id="call-log"></ul>
+        </section>
+      </div>
     </section>
 
-    <section class="card" id="todo" hidden>
-      <div class="card-head">
-        <h2>તમારે કરવાનું <small>For you</small></h2>
+    <!-- ================= Ledger ================= -->
+    <section class="view" id="view-ledger" aria-labelledby="t-ledger" hidden>
+      <div class="page-head">
+        <div>
+          <h1 class="serif" id="t-ledger">ખાતું</h1>
+          <p>Say a sale or a payment in Gujarati; Kavya calls from these dues.</p>
+        </div>
       </div>
-      <ul class="items" id="tasks"></ul>
+
+      <section class="card convo" id="convo" hidden aria-live="polite">
+        <div class="card-head">
+          <h2>નવી એન્ટ્રી <small>New entry</small></h2>
+          <button class="icon-btn" id="play-reply" hidden></button>
+        </div>
+        <p class="heard" id="heard"></p>
+        <dl class="draft" id="draft"></dl>
+        <p class="say" id="reply-say"></p>
+        <p class="hint" id="answer-hint" hidden></p>
+        <div class="actions" id="confirm" hidden>
+          <button class="btn primary" id="save"><svg class="i"><use href="/icons.svg#check"/></svg>હા, સાચવો <small>Save</small></button>
+          <button class="btn" id="cancel">ના, રદ કરો <small>Discard</small></button>
+        </div>
+      </section>
+
+      <section class="card how" id="how-to">
+        <span class="ico-tile"><svg class="i"><use href="/icons.svg#mic"/></svg></span>
+        <div>
+          <h2>બોલીને લખો <small>Speak an entry</small></h2>
+          <p>Tap the mic and say: <q>રમેશભાઈને 50,000 નો માલ આપ્યો, 30 દિવસ</q> or <q>કાંતાબેને 20,000 આપ્યા</q>. She asks for anything missing, then reads it back.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>ખાતાવહી <small>Balances</small></h2></div>
+        <ul class="items" id="balances"></ul>
+      </section>
     </section>
 
-    <section class="card" id="calls">
-      <div class="card-head">
-        <h2>આજના ફોન <small>Calls today</small></h2>
-        <button class="btn small primary" id="run-calls">બધાને ફોન <small>Call all</small></button>
+    <!-- ================= Settings ================= -->
+    <section class="view" id="view-settings" aria-labelledby="t-settings" hidden>
+      <div class="page-head">
+        <div>
+          <h1 class="serif" id="t-settings">સેટિંગ્સ</h1>
+          <p>What Kavya may agree to, when she calls, and who she calls for.</p>
+        </div>
       </div>
-      <p class="why" id="demo-left" hidden></p>
-      <p class="hint" id="hours-note" hidden></p>
-      <ul class="items" id="queue"></ul>
-    </section>
 
-    <section class="card" id="log">
-      <div class="card-head">
-        <h2>ફોનનો હિસાબ <small>Call log</small></h2>
-      </div>
-      <ul class="items calls" id="call-log"></ul>
-    </section>
-
-    <section class="card" id="rules">
-      <details>
-        <summary class="card-head"><h2>કાવ્યાના નિયમો <small>Kavya's rules</small></h2></summary>
-        <p class="why" id="rules-say"></p>
-        <form id="rules-form" class="rules">
-          <label>આખું પેમેન્ટ, વધુમાં વધુ <small>Whole payment within</small>
-            <span><input type="number" name="promise_days" min="1" max="60" required> દિવસ</span></label>
-          <label>ભાગમાં, છેલ્લો ભાગ <small>Last part within</small>
-            <span><input type="number" name="split_days" min="1" max="90" required> દિવસ</span></label>
-          <label>ફોનનો સમય <small>Call hours</small>
-            <input type="text" name="call_hours" required pattern="[0-9:, -]+"></label>
-          <label>તહેવાર, ફોન નહીં <small>Festival days (YYYY-MM-DD, …)</small>
-            <input type="text" name="holidays" placeholder="2026-11-08, 2026-11-10"></label>
-          <label class="check"><input type="checkbox" name="call_on_sunday"> રવિવારે પણ ફોન <small>Call on Sundays</small></label>
-          <label class="check"><input type="checkbox" name="auto_calls"> ઓટો ફોન ચાલુ <small>Automatic calls on</small></label>
-          <label>રીત <small>Tone</small>
-            <select name="tone"><option value="gentle">નરમ · Gentle</option><option value="firm">મક્કમ · Firm</option></select></label>
-          <button class="btn primary" type="submit">સાચવો <small>Save</small></button>
+      <div class="settings">
+        <form class="card set" data-keys="promise_days split_days tone auto_calls">
+          <div class="set-head"><span class="ico-tile sm"><svg class="i"><use href="/icons.svg#bot"/></svg></span>
+            <div><h2>કાવ્યાના નિયમો <small>Kavya's rules</small></h2><p id="rules-say">What she may agree to on her own. Anything more comes to you.</p></div></div>
+          <div class="fields">
+            <label class="field"><span>આખું પેમેન્ટ, વધુમાં વધુ <small>Whole payment within</small></span>
+              <span class="suffix"><input class="input" type="number" name="promise_days" min="1" max="60" required><em>દિવસ · days</em></span></label>
+            <label class="field"><span>ભાગમાં, છેલ્લો ભાગ <small>Last part within</small></span>
+              <span class="suffix"><input class="input" type="number" name="split_days" min="1" max="90" required><em>દિવસ · days</em></span></label>
+            <div class="field"><span>રીત <small>Tone</small></span>
+              <div class="segmented" role="radiogroup">
+                <label><input type="radio" name="tone" value="gentle"><span>નરમ · Gentle</span></label>
+                <label><input type="radio" name="tone" value="firm"><span>મક્કમ · Firm</span></label>
+              </div></div>
+            <label class="switch-row"><span>ઓટો ફોન ચાલુ <small>Automatic calls</small></span>
+              <input class="switch" type="checkbox" role="switch" name="auto_calls"></label>
+          </div>
+          <div class="set-foot"><button class="btn primary" type="submit">સાચવો <small>Save</small></button></div>
         </form>
-      </details>
-    </section>
 
-    <section class="card" id="ledger">
-      <div class="card-head">
-        <h2>ખાતાવહી <small>Balances</small></h2>
+        <form class="card set" data-keys="call_hours call_on_sunday holidays remind_after_days repeat_every_days">
+          <div class="set-head"><span class="ico-tile sm"><svg class="i"><use href="/icons.svg#clock"/></svg></span>
+            <div><h2>ફોનનો સમય <small>When she calls</small></h2><p>Automatic calls only go out in these hours. "Call now" works any time.</p></div></div>
+          <div class="fields">
+            <div class="field"><span>સવારે <small>Morning</small></span>
+              <span class="range"><input class="input" type="time" id="h1-from"><em>–</em><input class="input" type="time" id="h1-to"></span></div>
+            <div class="field"><span>સાંજે <small>Evening</small></span>
+              <span class="range"><input class="input" type="time" id="h2-from"><em>–</em><input class="input" type="time" id="h2-to"></span></div>
+            <label class="switch-row"><span>રવિવારે પણ ફોન <small>Call on Sundays</small></span>
+              <input class="switch" type="checkbox" role="switch" name="call_on_sunday"></label>
+            <div class="field"><span>તહેવાર, ફોન નહીં <small>Festival days, no calls</small></span>
+              <div class="holidays"><div id="holiday-picker"></div><ul class="chips" id="holiday-list"></ul></div></div>
+            <label class="field"><span>મુદત પછી પહેલો ફોન <small>First call after the due date</small></span>
+              <span class="suffix"><input class="input" type="number" name="remind_after_days" min="0" max="60" required><em>દિવસ · days</em></span></label>
+            <label class="field"><span>પછી ફરી ફોન દર <small>Then again every</small></span>
+              <span class="suffix"><input class="input" type="number" name="repeat_every_days" min="1" max="30" required><em>દિવસ · days</em></span></label>
+          </div>
+          <div class="set-foot"><button class="btn primary" type="submit">સાચવો <small>Save</small></button></div>
+        </form>
+
+        <form class="card set" data-keys="business_name business_name_spoken business_place products agent_name owner_name">
+          <div class="set-head"><span class="ico-tile sm"><svg class="i"><use href="/icons.svg#building"/></svg></span>
+            <div><h2>વેપાર <small>Business</small></h2><p>Who Kavya calls for, and how she says it.</p></div></div>
+          <div class="fields two">
+            <label class="field"><span>નામ <small>Business name</small></span><input class="input" name="business_name" required></label>
+            <label class="field"><span>બોલવામાં <small>As she says it</small></span><input class="input" name="business_name_spoken" required></label>
+            <label class="field"><span>ગામ <small>Place</small></span><input class="input" name="business_place" required></label>
+            <label class="field"><span>માલ <small>Products</small></span><input class="input" name="products" required></label>
+            <label class="field"><span>એજન્ટનું નામ <small>Agent's name</small></span><input class="input" name="agent_name" required></label>
+            <label class="field"><span>માલિક <small>She calls the owner</small></span><input class="input" name="owner_name" required></label>
+          </div>
+          <div class="set-foot"><button class="btn primary" type="submit">સાચવો <small>Save</small></button></div>
+        </form>
+
+        <section class="card set">
+          <div class="set-head"><span class="ico-tile sm"><svg class="i"><use href="/icons.svg#calendar"/></svg></span>
+            <div><h2>ડેમો તારીખ <small>Demo date</small></h2><p>Pretend today is another day, to show dues falling due. Only this browser sees it.</p></div></div>
+          <div class="fields"><div class="field"><span>આજની તારીખ ગણો <small>Treat today as</small></span><div id="demo-picker"></div></div></div>
+        </section>
       </div>
-      <ul class="items" id="balances"></ul>
     </section>
 
-    <p class="foot">Gnani Prisma (speech to text) + Timbre (text to speech) · ડેમો ડેટા / demo data</p>
+    <p class="foot">Gnani Prisma (speech to text) + Timbre (voice) · ડેમો ડેટા / demo data</p>
   </main>
 
-  <dialog id="reminder" aria-labelledby="reminder-title">
-    <h2 id="reminder-title">યાદી <small>Reminder</small></h2>
-    <p class="say" id="reminder-say"></p>
-    <div class="actions">
-      <button class="btn" id="play-reminder"><svg class="i" aria-hidden="true"><use href="/icons.svg#play"/></svg> સાંભળો <small>Listen</small></button>
-      <button class="btn primary" id="share-reminder">WhatsApp પર મોકલો <small>Send</small></button>
-    </div>
-    <button class="btn ghost" id="close-reminder">બંધ કરો <small>Close</small></button>
-  </dialog>
+  <nav class="tabbar" aria-label="Sections">
+    <a href="#today" data-view="today"><svg class="i"><use href="/icons.svg#home"/></svg>આજે</a>
+    <a href="#calls" data-view="calls"><svg class="i"><use href="/icons.svg#phone"/></svg>ફોન</a>
+    <a href="#ledger" data-view="ledger"><svg class="i"><use href="/icons.svg#book"/></svg>ખાતું</a>
+    <a href="#settings" data-view="settings"><svg class="i"><use href="/icons.svg#settings"/></svg>સેટિંગ્સ</a>
+  </nav>
 
-  <div class="dock">
+  <div class="dock" id="dock">
     <button class="mic" id="mic" aria-label="Tap to speak">
-      <span class="mic-icon" aria-hidden="true"></span>
+      <svg class="i mic-glyph" id="mic-glyph"><use href="/icons.svg#mic"/></svg>
       <span class="mic-label" id="mic-label">બોલો</span>
     </button>
   </div>
 
+  <dialog id="reminder" aria-labelledby="reminder-title">
+    <div class="card-head"><h2 id="reminder-title">યાદી <small>Reminder</small></h2><button class="icon-btn" id="play-reminder"></button></div>
+    <p class="say" id="reminder-say"></p>
+    <div class="actions">
+      <button class="btn primary" id="share-reminder"><svg class="i"><use href="/icons.svg#message"/></svg>WhatsApp પર મોકલો <small>Send</small></button>
+      <button class="btn" id="close-reminder">બંધ કરો <small>Close</small></button>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" hidden></div>
   <audio id="player" preload="none"></audio>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>
