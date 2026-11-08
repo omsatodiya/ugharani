@@ -8,6 +8,7 @@ out/
 *.ogg
 !ugharani/clips/*.wav
 !video/public/audio/*.wav
+!video/public/music.mp3
 
 # ledger database
 *.db
