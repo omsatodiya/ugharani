@@ -163,6 +163,11 @@ const Ringing: React.FC = () => {
   );
 };
 
+const Question: React.FC = () => {
+  const { width } = useVideoConfig();
+  return <Pop size={width < 1500 ? 76 : 104} grad weight={700}>ભાઈ, પેમેન્ટ ક્યારે મોકલશો?</Pop>;
+};
+
 const Opening: React.FC = () => (
   <AbsoluteFill>
     <Sequence durationInFrames={s(2)}><Particles count={18} /><Scatter text="every month," /></Sequence>
@@ -172,7 +177,7 @@ const Opening: React.FC = () => (
     <Sequence from={s(5)} durationInFrames={s(1)}><Word text={<>the same call<Dot delay={7} /></>} /></Sequence>
     <Sequence from={s(6)} durationInFrames={s(2)}>
       <Center gap={14}>
-        <Pop size={104} grad weight={700}>ભાઈ, પેમેન્ટ ક્યારે મોકલશો?</Pop>
+        <Question />
         <Pop size={34} delay={10} weight={500} color="rgba(220,228,255,0.6)">“Bhai, when will you send the payment?”</Pop>
       </Center>
     </Sequence>
@@ -528,7 +533,7 @@ const AFTER_AT = s(46);
 
 export const Kinetic: React.FC = () => (
   <AbsoluteFill style={{ background: BG }}>
-    <Audio src={staticFile("music.mp3")} volume={(f) => interpolate(f, [CALL_AT - 10, CALL_AT + 10, AFTER_AT - 15, AFTER_AT], [0.9, 0.5, 0.5, 0.9], clamp)} />
+    <Audio src={staticFile("music.mp3")} volume={(f) => interpolate(f, [CALL_AT - 10, CALL_AT + 10, AFTER_AT - 15, AFTER_AT], [0.6, 0.26, 0.26, 0.6], clamp)} />
     <Sequence durationInFrames={CALL_AT}><Opening /></Sequence>
     <Sequence from={CALL_AT} durationInFrames={CALL_LEN}><CallScene /></Sequence>
     <Sequence from={AFTER_AT}><After /></Sequence>
