@@ -57,9 +57,9 @@ GAP = pytest.mark.xfail(strict=True, reason="phase 1: not caught yet")
 
 MUST_BLOCK = [
     # amounts in words, on no bill
-    pytest.param("તો 75 હજાર મોકલી દેજો.", marks=GAP, id="words-75-hazar"),
-    pytest.param("એક લાખ દસ હજાર બાકી છે.", marks=GAP, id="words-lakh-das-hazar"),
-    pytest.param("સવા લાખનું પેમેન્ટ ક્યારે આવશે?", marks=GAP, id="words-sava-lakh"),
+    pytest.param("તો 75 હજાર મોકલી દેજો.", id="words-75-hazar"),
+    pytest.param("એક લાખ દસ હજાર બાકી છે.", id="words-lakh-das-hazar"),
+    pytest.param("સવા લાખનું પેમેન્ટ ક્યારે આવશે?", id="words-sava-lakh"),
     # number words before a duration
     pytest.param("ત્રીસ દિવસમાં આપજો.", marks=GAP, id="words-trees-divas"),
     pytest.param("ત્રણ અઠવાડિયામાં કરી દેજો.", marks=GAP, id="words-tran-athvadiya"),

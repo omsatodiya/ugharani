@@ -39,11 +39,17 @@ def _is(word: str, term: str) -> bool:
 
 
 def _amounts(text: str) -> set[int]:
+    """Amounts in a sentence of hers: "₹1,20,000", "1,20,000 રૂપિયા", and in words, "75 હજાર",
+    "એક લાખ દસ હજાર", "સવા લાખ". (Words only with હજાર/લાખ/કરોડ: "10 તારીખે" is not money.)"""
     found = set()
     for m in AMOUNT.finditer(text):
         digits = (m.group(1) or m.group(2)).replace(",", "")
         if digits.isdigit():
             found.add(int(digits))
+    tokens = [t.lower() for t in extract._TOKEN.findall(text)]
+    for value, start, end in extract._number_groups(tokens):
+        if any((extract._magnitude(t) or 0) >= 1_000 for t in tokens[start:end]):
+            found.add(round(value))
     return found
 
 
