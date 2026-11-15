@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS calls (
     flags           TEXT,              -- JSON list: what the agent's checker stopped her saying, for the owner
     owner_action    TEXT,              -- what the owner must do after the call (from the notes), if anything
     payment_mode    TEXT,              -- how they said they'll pay: RTGS, cheque, UPI, cash...
+    audit           TEXT,              -- JSON list: what the after-call check found she said, for the owner
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at        TEXT
 );
@@ -67,9 +68,13 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.executescript(SCHEMA)
     have = {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}
-    for column in ("flags", "owner_action", "payment_mode"):  # (older databases)
+    for column in ("flags", "owner_action", "payment_mode", "audit"):  # (older databases)
         if column not in have:
-            conn.execute(f"ALTER TABLE calls ADD COLUMN {column} TEXT")
+            try:
+                conn.execute(f"ALTER TABLE calls ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError as e:  # another request added it a moment ago
+                if "duplicate column" not in str(e):
+                    raise
     return conn
 
 

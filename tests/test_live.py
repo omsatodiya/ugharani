@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ugharani import clock, gnani, live, llm, main, speech
+from ugharani import clock, gnani, guard, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
@@ -1047,6 +1047,34 @@ def test_the_notes_are_written_after_the_call(phone):
     assert call["owner_action"] == "WhatsApp પર સ્ટેટમેન્ટ મોકલવું" and call["payment_mode"] == "RTGS"
     assert call["status"] == "completed" and len(call["transcript"]) == 5  # (kept as said)
     assert "Customer: 10 તારીખે RTGS, સ્ટેટમેન્ટ મોકલજો" in rec["notes_asked"][0]
+
+
+def test_the_after_call_check_tells_the_owner_what_she_said(phone, monkeypatch):
+    """A threat no word list caught was said; after the call, the audit puts it on the call."""
+    client, call_id, rec = phone
+    asked = []
+
+    async def audit(lines):
+        asked.append(lines)
+        return [f"supply: {line}" for line in lines if "રવાના" in line]
+    monkeypatch.setattr(guard, "audit", audit)
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?",
+                      "અચ્છા. તમારી એક પણ લાઈન રવાના નહીં થાય.", "સારું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "જોઉં છું")
+        until(ws, {"text": "તમારી એક પણ લાઈન રવાના નહીં થાય."})
+        time.sleep(0.6)
+        say(ws, "સારું")
+        until(ws, {"type": "end"})
+    call = _saved(client, call_id, "outcome")
+    assert call["audit"] == ["supply: તમારી એક પણ લાઈન રવાના નહીં થાય."]
+    assert call["flags"] == []  # (it was said: not something the checker stopped)
+    assert GREETING not in asked[0] and "હા નમસ્તે." not in asked[0]  # fixed lines aren't sent,
+    assert "હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી." not in asked[0]  # sentence by sentence either
 
 
 def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monkeypatch):

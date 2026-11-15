@@ -53,6 +53,30 @@ NUMBER_WORDS = {
     **dict.fromkeys(["dodh", "dedh", "દોઢ"], 1.5),
     **dict.fromkeys(["adhi", "dhai", "અઢી"], 2.5),
 }
+# Every Gujarati number 1-99 (they are irregular, so a table), with common spellings, and Hindi as
+# Prisma writes it in Gujarati script. Added to NUMBER_WORDS where not already there.
+_GUJARATI_1_99 = """
+1 એક|2 બે|3 ત્રણ|4 ચાર|5 પાંચ|6 છ|7 સાત|8 આઠ|9 નવ|10 દસ દશ|11 અગિયાર અગ્યાર|12 બાર|13 તેર|14 ચૌદ|
+15 પંદર|16 સોળ|17 સત્તર|18 અઢાર|19 ઓગણીસ|20 વીસ|21 એકવીસ|22 બાવીસ|23 તેવીસ ત્રેવીસ|24 ચોવીસ|
+25 પચ્ચીસ પચીસ|26 છવ્વીસ છવીસ|27 સત્તાવીસ સત્યાવીસ|28 અઠ્ઠાવીસ અઠ્યાવીસ|29 ઓગણત્રીસ|30 ત્રીસ|
+31 એકત્રીસ|32 બત્રીસ|33 તેત્રીસ|34 ચોત્રીસ|35 પાંત્રીસ|36 છત્રીસ|37 સાડત્રીસ|38 આડત્રીસ|
+39 ઓગણચાલીસ|40 ચાલીસ ચાળીસ|41 એકતાલીસ|42 બેતાલીસ|43 તેતાલીસ|44 ચુંમાલીસ ચુમ્માલીસ|
+45 પિસ્તાલીસ પિસ્તાળીસ|46 છેતાલીસ|47 સુડતાલીસ|48 અડતાલીસ|49 ઓગણપચાસ|50 પચાસ|51 એકાવન|52 બાવન|
+53 ત્રેપન|54 ચોપન|55 પંચાવન|56 છપ્પન|57 સત્તાવન|58 અઠ્ઠાવન|59 ઓગણસાઠ|60 સાઠ સાઈઠ સાંઈઠ સાઇઠ|
+61 એકસઠ|62 બાસઠ|63 ત્રેસઠ|64 ચોસઠ|65 પાંસઠ|66 છાસઠ|67 સડસઠ|68 અડસઠ|69 અગણોસિત્તેર ઓગણસિત્તેર|
+70 સિત્તેર|71 એકોતેર|72 બોતેર|73 તોંતેર|74 ચુમોતેર|75 પંચોતેર|76 છોતેર|77 સિત્યોતેર|78 ઇઠ્યોતેર|
+79 ઓગણએંસી|80 એંસી એંશી અસી અંશી|81 એક્યાસી|82 બ્યાસી|83 ત્યાસી|84 ચોર્યાસી|85 પંચાસી|86 છ્યાસી|
+87 સિત્યાસી|88 અઠ્યાસી ઈઠ્યાસી|89 નેવ્યાસી|90 નેવું નેવુ|91 એકાણું|92 બાણું|93 ત્રાણું|94 ચોરાણું|
+95 પંચાણું|96 છન્નું|97 સત્તાણું|98 અઠ્ઠાણું|99 નવ્વાણું|
+2 દો|3 તીન|6 છહ|9 નૌ|11 ગ્યારહ|12 બારહ|13 તેરહ|14 ચૌદહ|15 પંદ્રહ પંદરહ|16 સોલહ|17 સત્રહ|18 અઠારહ|19 ઉન્નીસ|20 બીસ|
+25 પચ્ચીસ|30 તીસ|40 ચાલીસ|50 પચાસ|60 સાઠ|80 અસ્સી|90 નબ્બે
+"""
+for _entry in _GUJARATI_1_99.replace("\n", "").split("|"):
+    if _entry.strip():
+        _value, *_words = _entry.split()
+        for _word in _words:
+            NUMBER_WORDS.setdefault(_word, int(_value))
+
 MAGNITUDES = {
     **dict.fromkeys(["so", "sau", "સો"], 100),
     **dict.fromkeys(["hazar", "hazaar", "hajar", "hajaar", "thousand", "હજાર", "થાઉઝન્ડ"], 1_000),
@@ -118,7 +142,15 @@ def _split_itn(value: float, magnitude: int) -> float:
     return value - low + low * magnitude
 
 
+# Hindi as Prisma writes it: "દિન" only as whole words ("દિનેશભાઈ" is a name), "હફ્તે" (a week)
+HINDI_DURATIONS = {"દિન": 1, "દિનો": 1, "દિનોં": 1, "દિનમેં": 1}
+
+
 def _duration_unit(tok: str) -> int | None:
+    if tok in HINDI_DURATIONS:
+        return HINDI_DURATIONS[tok]
+    if tok.startswith(("હફ્ત", "હફત")):
+        return 7
     return next((days for stem, days in DURATION_STEMS.items() if tok.startswith(stem)), None)
 
 

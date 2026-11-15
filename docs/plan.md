@@ -229,6 +229,9 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 - 1.6 More discount/waiver wording ("% ઓછા", "ઓછું કરી", "માફ"), Gujarati and Hindi.
 - 1.7 Sentence table grown to ~80 cases; docs/live-calls.md updated.
 - 1.8 `scripts/guard_fuzz.py`: the generated run described in Phase 1; its misses fixed.
+- 1.9 (added) A second opinion for what words can't pin down. Checking each sentence with Gemini
+  before speaking measured too slow on the free tier (median 2.3 s); agreed instead: an after-call
+  audit of all her lines (one request), shown to the owner. Results in docs/live-calls.md.
 
 ### Phase 2 — `phase-2-conversation`
 - 2.1 `ugharani/lang/gu.py`: move the Gujarati word lists out of live.py/agent.py/guard.py (no

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from ugharani import agent, clock, db, followup, gnani, live, llm, reminders, speech
+from ugharani import agent, clock, db, followup, gnani, guard, live, llm, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
 
@@ -410,7 +410,13 @@ _notes_tasks: set[asyncio.Task] = set()  # notes being written after calls (kept
 
 async def write_notes(call_id: int, rules: dict, customer: dict, history: list[dict]) -> None:
     """After a live call: the owner's notes (outcome, promise, what they must do), like the staff
-    member writing them in the sheet. A Gemini failure leaves the call saved without notes."""
+    member writing them in the sheet, and the after-call check of what she said (guard.audit).
+    Each is saved as soon as it is ready; a Gemini failure leaves the call saved without it."""
+    await asyncio.gather(_save_notes(call_id, rules, customer, history),
+                         _save_audit(call_id, rules, customer, history))
+
+
+async def _save_notes(call_id: int, rules: dict, customer: dict, history: list[dict]) -> None:
     try:
         n = await agent.notes(rules, customer, history, clock.today())
     except llm.LLMError as e:
@@ -427,6 +433,22 @@ async def write_notes(call_id: int, rules: dict, customer: dict, history: list[d
     finally:
         conn.close()
     log.info("call %s notes: %s, %s", call_id, n["outcome"], n["summary"])
+
+
+async def _save_audit(call_id: int, rules: dict, customer: dict, history: list[dict]) -> None:
+    fixed = {*live.FIXED_LINES, guard.instead(rules, customer), agent.greeting(customer),
+             agent.intro(rules, True), agent.intro(rules, False)}
+    fixed |= {part for line in list(fixed) for part in live.SENTENCE_END.split(line)}  # (and their sentences)
+    hers = [sentence for h in history if h["who"] == "agent"  # (a turn is kept as one line)
+            for sentence in live.SENTENCE_END.split(h["text"]) if sentence.strip() and sentence not in fixed]
+    found = await guard.audit(hers)
+    if found:
+        log.warning("call %s: the after-call check found: %s", call_id, found)
+        conn = db.connect()
+        try:
+            followup.set_audit(conn, call_id, found)
+        finally:
+            conn.close()
 
 
 def max_live_calls() -> int:

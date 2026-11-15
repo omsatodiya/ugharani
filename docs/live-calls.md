@@ -97,14 +97,44 @@ The prompt states them as dates ("up to 12 નવેમ્બર"), not as rules
 
 A prompt can still slip, so `ugharani/guard.py` checks every sentence **in code** before it is
 synthesised. It is never said if it:
-- brings up a discount, interest or penalty, legal action, stopping supply, or a rate, unless it
-  is handing that topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે")
+- brings up a discount, interest or penalty, or a rate, unless it is handing that topic over
+  ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે"); also said without the word: a percentage ("2 ટકા",
+  but not "સો ટકા", "definitely"), "ઓછું કરી આપીશું", "માફ કરી દઈશું" (not "માફ કરજો", "sorry")
+- threatens legal action or stopping supply ("કોર્ટ", "વકીલ", "માલ બંધ", "ઓર્ડર નહીં મળે",
+  "બ્લેકલિસ્ટ"): never, handed over or not
 - names an amount that is not the balance, an open bill, something the customer said
-  ("60 હજાર", "દોઢ લાખ" too) or what is left after it
-- names a date past the 15-day limit ("25 તારીખે", "2 ડિસેમ્બરે", "30 દિવસમાં")
+  ("60 હજાર", "દોઢ લાખ" too) or what is left after it; her own amounts are read in words too
+  ("75 હજાર", "એક લાખ દસ હજાર", "સવા લાખ")
+- names a date whose latest day is past the 15-day limit, or a date past the 7-day limit for the
+  whole amount (only a part payment may run past 7 days)
+
+Dates are read by `ugharani/dates.py` as spans (earliest, latest): "15 તારીખે", "5 ડિસેમ્બરે",
+weekdays, "કાલે", "પરમ દિવસે", "આવતા અઠવાડિયે" (next Monday to Sunday), "આવતા મહિને" (all of
+next month), "જાન્યુઆરીમાં", "ત્રીસ દિવસમાં", "ત્રણ અઠવાડિયામાં", Hindi "અગલે હફ્તે"; "X પછી"
+has no end ("દિવાળી પછી", "15 તારીખ પછી"), except a duration ("7 દિવસ પછી" is day 7); "X
+પહેલાં" / "X સુધી" end at X. Festivals (દિવાળી, લાભ પાંચમ, દેવ દિવાળી, ઉત્તરાયણ, હોળી, …) come
+from a table of dates for 2026-27 that must be extended each year. A payment on or by a festival
+takes its next date; only "X પછી" may mean one just past ("દિવાળી પછી" a week after Diwali). With
+no date ahead in the table, the festival counts as open-ended, so it is never let through.
 
 In its place she says "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." (a bundled clip), the
 rest of that reply is dropped, and the reason is saved on the call (`calls.flags`) for the owner.
+
+**After the call, a second opinion (Nov 15).** Threats, stopping supply and discounts can be said in
+endless ways ("ટ્રેલર રવાના નહીં થાય", "લાયસન્સ રદ", "રાઉન્ડ ઓફ"); the word lists catch the common
+ones. Gemini checking each sentence before it is spoken was measured on the free tier: median
+2.3 s, 1 in 10 over 7.9 s, so it would have slowed every reply by ~2 s and still timed out half the
+time. Instead `guard.audit` sends all her sentences from the call to Gemini in one request, next to
+the notes; anything it finds is saved on the call (`calls.audit`, separate from `flags`: it *was*
+said) and the owner's app shows it as a to-do with the line, to call and correct.
+
+`scripts/guard_fuzz.py` tests both: Gemini writes rule-breaking and fine sentences (Gujarati, Hindi,
+mixed; digits and words), and the misses are saved for a person to read. Results on Nov 15:
+
+| | words, first run | words, after fixes, fresh sentences | after-call check |
+|---|---|---|---|
+| rule-breaking caught | 158/205 | 179/180 (dates, amounts, interest, rates: all) | 13/15 |
+| fine ones blocked | 15/74 (20%) | 0/116 | 0/15 |
 
 Also new in the prompt: the open bills ("which bill?"), statement and bank details promised on
 WhatsApp (an owner task in the notes), dues kept private when someone else answers, an honest

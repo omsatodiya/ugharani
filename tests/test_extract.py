@@ -88,3 +88,17 @@ def test_amounts_and_days_as_prisma_writes_them(text, amount, days):
 
 def test_misheard_three_is_asked_again_not_saved_as_3_days():
     assert parse("થ્રી દિવસ", today=TODAY).due_days is None
+
+
+def test_every_number_up_to_99_has_a_gujarati_word():
+    from ugharani.extract import NUMBER_WORDS
+    gujarati = {v for w, v in NUMBER_WORDS.items() if not w.isascii() and isinstance(v, int)}
+    assert set(range(1, 100)) <= gujarati
+
+
+def test_irregular_gujarati_number_words():
+    from ugharani.extract import NUMBER_WORDS
+    for word, value in {"અગિયાર": 11, "ચૌદ": 14, "ઓગણીસ": 19, "બાવીસ": 22, "અઠ્ઠાવન": 58, "સત્તર": 17,
+                        "પંચાવન": 55, "નેવ્યાસી": 89, "નવ્વાણું": 99}.items():
+        assert NUMBER_WORDS[word] == value, word
+    assert parse("રમેશભાઈને અઠ્ઠાવન હજારનો માલ, ત્રીસ દિવસ", today=date(2026, 11, 4)).amount == 58000

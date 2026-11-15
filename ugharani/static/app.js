@@ -451,19 +451,27 @@ function callItem(c) {
 }
 
 function tasksFrom(calls) {
-  // The latest call per customer: what is left for the owner to do.
-  const seen = new Set(), tasks = [];
+  // The latest call per customer: what is left for the owner to do. What the after-call check found
+  // she said stays from every listed call of theirs: a later call doesn't undo it.
+  const seen = new Set(), tasks = [], saidBy = {};
+  for (const c of calls) {
+    for (const f of c.audit || []) (saidBy[c.customer] ||= []).push(f.split(": ").slice(1).join(": "));
+  }
   for (const c of calls) {
     if (seen.has(c.customer)) continue;
     seen.add(c.customer);
     const why = c.owner_action
       || (c.outcome === "handover" ? "તમે ફોન કરો · Call them" : null)
       || (c.outcome === "dispute" ? "વાંધો ઉકેલો · Settle the dispute" : null);
-    if (!why && !c.flags?.length) continue;
+    const said = saidBy[c.customer] || [];
+    if (!why && !c.flags?.length && !said.length) continue;
     tasks.push(el("li", {},
       el("div", { class: "who" },
         el("div", { class: "name" }, c.customer),
-        el("div", {}, why || "કાવ્યાએ એક વાત ટાળી, તમે ફોન કરો · Kavya held back, call them"),
+        el("div", {}, why || (said.length ? "કાવ્યાએ કદાચ ખોટું કહ્યું, ફોન કરીને સુધારો · Kavya may have said something wrong, call to correct"
+          : "કાવ્યાએ એક વાત ટાળી, તમે ફોન કરો · Kavya held back, call them")),
+        why && said.length ? el("div", { class: "why" }, "કાવ્યાએ કદાચ ખોટું કહ્યું · Kavya may have said:") : null,
+        ...said.map((line) => el("div", { class: "why" }, `“${line}”`)),
         c.flags?.length ? el("div", { class: "why" }, `ચેકરે ${c.flags.length} વાક્ય રોક્યું · Checker stopped ${c.flags.length}`) : null),
       el("span", { class: "amt" }, rupees.format(c.amount_due))));
   }
@@ -491,7 +499,7 @@ async function refreshCalls() {
     fill($("next-calls"), [queue.slice(0, 3), busyKey], () => (queue.length ? queue.slice(0, 3).map((q) => queueItem(q, busy)) : empty(none)));
     fill($("call-log"), log.slice(0, 20), () => (log.length ? log.slice(0, 20).map(callItem) : empty("હજી કોઈ ફોન નથી કર્યો · No calls yet")));
     const tasks = tasksFrom(log);
-    fill($("tasks"), log.slice(0, 20).map((c) => [c.id, c.owner_action, c.outcome, c.flags]),
+    fill($("tasks"), log.map((c) => [c.id, c.owner_action, c.outcome, c.flags, c.audit]),  // (as tasksFrom reads them)
       () => (tasks.length ? tasks : empty("કંઈ બાકી નથી · Nothing for you")));
     countUp($("st-calls"), queue.length);
     countUp($("st-tasks"), tasks.length);

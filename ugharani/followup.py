@@ -153,6 +153,7 @@ def _call(row: sqlite3.Row | None) -> dict | None:
     call = dict(row)
     call["transcript"] = json.loads(call["transcript"]) if call["transcript"] else []
     call["flags"] = json.loads(call["flags"]) if call.get("flags") else []
+    call["audit"] = json.loads(call["audit"]) if call.get("audit") else []
     return call
 
 
@@ -213,6 +214,12 @@ def finish_call(conn: sqlite3.Connection, call_id: int, *, transcript: list[dict
          promised_date.isoformat() if promised_date else None, recording, owner_action, payment_mode,
          clock.now().isoformat(timespec="seconds"), call_id),
     )
+    conn.commit()
+
+
+def set_audit(conn: sqlite3.Connection, call_id: int, found: list[str]) -> None:
+    """What the after-call check found she said (guard.audit): the owner may need to call."""
+    conn.execute("UPDATE calls SET audit = ? WHERE id = ?", (json.dumps(found, ensure_ascii=False), call_id))
     conn.commit()
 
 
