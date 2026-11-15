@@ -31,3 +31,16 @@ TODAY = "2026-11-03"  # a Tuesday early in the month: "10 તારીખે" is
 def fixed_today(monkeypatch):
     """Every test runs on the same date, so none depends on the day it happens to run."""
     monkeypatch.setenv("UGHARANI_TODAY", TODAY)
+
+
+@pytest.fixture(autouse=True)
+def audit_finds_nothing(request, monkeypatch):
+    """The after-call check (Gemini) finds nothing, unless the test is marked real_audit (then it
+    runs, with whatever llm fake the test sets) or sets its own."""
+    if request.node.get_closest_marker("real_audit"):
+        return
+    from ugharani import guard
+
+    async def audit(lines):
+        return []
+    monkeypatch.setattr(guard, "audit", audit)

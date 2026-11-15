@@ -1,10 +1,11 @@
 """The owner's limits, enforced on every sentence the agent is about to say."""
 
+import asyncio
 from datetime import date
 
 import pytest
 
-from ugharani import guard
+from ugharani import guard, llm
 
 TODAY = date(2026, 11, 4)
 SETTINGS = {"owner_name": "શેઠ", "promise_days": 7, "split_days": 15}
@@ -192,3 +193,33 @@ def test_her_fixed_lines_always_pass():
              agent.intro(settings, False), agent.fallback_ask(CUSTOMER), guard.instead(settings, CUSTOMER)]
     for line in fixed:
         assert check(line) is None, line
+
+
+# ---------- the after-call check (Gemini) ----------
+
+@pytest.mark.real_audit
+def test_audit_names_the_lines_that_broke_a_rule(monkeypatch):
+    seen = {}
+
+    async def answer(system, history, schema):
+        seen["text"] = history[0]["text"]
+        return {"found": [{"line": 2, "topic": "threat"}, {"line": 9, "topic": "supply"}]}  # (9: no such line)
+    monkeypatch.setattr(llm, "generate_json", answer)
+    found = asyncio.run(guard.audit(["સારું. કઈ તારીખ ગણું?", "બજારમાં તમારી શાખ જશે."]))
+    assert found == ["threat: બજારમાં તમારી શાખ જશે."]
+    assert seen["text"] == "1. સારું. કઈ તારીખ ગણું?\n2. બજારમાં તમારી શાખ જશે."  # one request, numbered
+
+
+@pytest.mark.real_audit
+def test_audit_failing_or_slow_finds_nothing(monkeypatch):
+    monkeypatch.setattr(guard, "AUDIT_TIMEOUT", 0.1)
+
+    async def broken(system, history, schema):
+        raise llm.LLMError("HTTP 429")
+
+    async def slow(system, history, schema):
+        await asyncio.sleep(5)
+    for fake in (broken, slow):
+        monkeypatch.setattr(llm, "generate_json", fake)
+        assert asyncio.run(guard.audit(["બજારમાં તમારી શાખ જશે."])) == []
+    assert asyncio.run(guard.audit([])) == []

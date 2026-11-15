@@ -6,10 +6,14 @@ reach the customer. A sentence that breaks a rule is replaced by a hand-over to 
 owner is told why.
 """
 
+import asyncio
+import logging
 import re
 from datetime import date, timedelta
 
-from ugharani import dates, extract
+from ugharani import dates, extract, llm
+
+log = logging.getLogger("uvicorn.error")
 
 # Things she never brings up (the owner decides them, or they're never said at all). Matched on
 # words, so "ભાવ" in "ભાવનગર" doesn't count.
@@ -145,6 +149,59 @@ def _in_parts(text: str, history: list[dict], balance: int) -> bool:
         if any(0 < n < balance for n in money) or any(w in line for w in REST):
             return True
     return False
+
+
+# ---------- after the call: a second opinion on what words can't pin down ----------
+
+# Threats, stopping supply and discounts can be said in endless ways ("ટ્રેલર રવાના નહીં થાય",
+# "લાયસન્સ રદ", "રાઉન્ડ ઓફ"); the word lists above catch the common ones as she speaks. Checking
+# every sentence with Gemini before it is said was measured on the free tier (Nov 2026): a median
+# 2.3 s, often 8 s, so it would slow every reply. Instead, after the call Gemini reads all her lines
+# at once (one request) and anything it finds goes to the owner, who can call and correct it.
+AUDIT_TIMEOUT = 60.0
+AUDIT_TOPICS = ["discount", "threat", "supply"]
+AUDIT_SCHEMA = {
+    "type": "object",
+    "properties": {"found": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"line": {"type": "integer"}, "topic": {"type": "string", "enum": AUDIT_TOPICS}},
+        "required": ["line", "topic"]}}},
+    "required": ["found"],
+}
+AUDIT_PROMPT = """You check what an AI agent said on a payment-reminder phone call for a Gujarat \
+pipe-fittings company (Gujarati, Hindi written in Gujarati script, or mixed). You get her lines, \
+numbered. List every line that breaks one of these rules, with the rule; an empty list if none:
+- discount: offers, agrees to or hints at paying less, a discount, waiving or reducing any part, \
+rounding off, settling for less, cash discount, any concession on the amount
+- threat: legal action, court, lawyer, police, complaints against them, notices, damaging their \
+name or reputation, ending the relationship, any pressure or scare tactic
+- supply: stopping, holding, cancelling or delaying their goods, orders, dispatch, delivery, \
+dealership or account until they pay
+Not breaking: asking for a date or amount, confirming a payment plan, payment modes, apologising \
+("માફ કરજો"), saying the owner or a colleague will call about a discount, rate or dispute without \
+promising anything, noting their complaint, sending a statement on WhatsApp, greetings. Dates and \
+amounts are checked elsewhere: ignore them."""
+
+
+async def audit(lines: list[str]) -> list[str]:
+    """Her lines from one call, read by Gemini: what the owner should know about, or [] (none, or
+    no answer: the audit is a second opinion, its failure changes nothing)."""
+    if not lines:
+        return []
+    numbered = "\n".join(f"{n}. {line}" for n, line in enumerate(lines, 1))
+    try:
+        out = await asyncio.wait_for(
+            llm.generate_json(AUDIT_PROMPT, [{"who": "customer", "text": numbered}], AUDIT_SCHEMA),
+            timeout=AUDIT_TIMEOUT)
+    except (TimeoutError, llm.LLMError) as e:
+        log.warning("audit: no answer (%s)", type(e).__name__)
+        return []
+    found = []
+    for item in out.get("found", []) if isinstance(out, dict) else []:
+        n, topic = item.get("line"), item.get("topic")
+        if isinstance(n, int) and 1 <= n <= len(lines) and topic in AUDIT_TOPICS:
+            found.append(f"{topic}: {lines[n - 1]}")
+    return found
 
 
 def instead(settings: dict, customer: dict) -> str:

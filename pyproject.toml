@@ -24,3 +24,6 @@ packages = ["ugharani"]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+markers = ["real_audit: run the real after-call Gemini check (with the test's own llm fake)"]
