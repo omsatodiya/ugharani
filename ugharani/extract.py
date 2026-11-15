@@ -68,7 +68,7 @@ _GUJARATI_1_99 = """
 79 ઓગણએંસી|80 એંસી એંશી અસી અંશી|81 એક્યાસી|82 બ્યાસી|83 ત્યાસી|84 ચોર્યાસી|85 પંચાસી|86 છ્યાસી|
 87 સિત્યાસી|88 અઠ્યાસી ઈઠ્યાસી|89 નેવ્યાસી|90 નેવું નેવુ|91 એકાણું|92 બાણું|93 ત્રાણું|94 ચોરાણું|
 95 પંચાણું|96 છન્નું|97 સત્તાણું|98 અઠ્ઠાણું|99 નવ્વાણું|
-11 ગ્યારહ|12 બારહ|13 તેરહ|14 ચૌદહ|15 પંદ્રહ પંદરહ|16 સોલહ|17 સત્રહ|18 અઠારહ|19 ઉન્નીસ|20 બીસ|
+2 દો|3 તીન|6 છહ|9 નૌ|11 ગ્યારહ|12 બારહ|13 તેરહ|14 ચૌદહ|15 પંદ્રહ પંદરહ|16 સોલહ|17 સત્રહ|18 અઠારહ|19 ઉન્નીસ|20 બીસ|
 25 પચ્ચીસ|30 તીસ|40 ચાલીસ|50 પચાસ|60 સાઠ|80 અસ્સી|90 નબ્બે
 """
 for _entry in _GUJARATI_1_99.replace("\n", "").split("|"):
@@ -142,7 +142,15 @@ def _split_itn(value: float, magnitude: int) -> float:
     return value - low + low * magnitude
 
 
+# Hindi as Prisma writes it: "દિન" only as whole words ("દિનેશભાઈ" is a name), "હફ્તે" (a week)
+HINDI_DURATIONS = {"દિન": 1, "દિનો": 1, "દિનોં": 1, "દિનમેં": 1}
+
+
 def _duration_unit(tok: str) -> int | None:
+    if tok in HINDI_DURATIONS:
+        return HINDI_DURATIONS[tok]
+    if tok.startswith(("હફ્ત", "હફત")):
+        return 7
     return next((days for stem, days in DURATION_STEMS.items() if tok.startswith(stem)), None)
 
 

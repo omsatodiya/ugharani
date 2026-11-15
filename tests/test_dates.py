@@ -53,6 +53,18 @@ D = lambda m, d, y=2026: date(y, m, d)  # noqa: E731
     ("ઉત્તરાયણ પર", [(D(1, 14, 2027), D(1, 14, 2027))]),
     ("હોળી પહેલાં", [(TODAY, D(3, 22, 2027))]),
     ("દિવાળીની શુભકામનાઓ", []),
+    # found in review (#2)
+    ("બે-ત્રણ મહિના પછી", [(D(2, 2, 2027), D(2, 2, 2027))]),         # a range: the larger
+    ("પંદરમી તારીખ પછી", [(D(11, 15), dates.OPEN)]),
+    ("પહેલી તારીખે", [(D(12, 1), D(12, 1))]),
+    ("મે મહિનામાં", [(D(5, 1, 2027), D(5, 31, 2027))]),
+    ("મેમાં", [(D(5, 1, 2027), D(5, 31, 2027))]),
+    ("મેં કીધું ને", []),                                             # "I said", not May
+    ("10 નવેમ્બરે ₹70,000 અને 25 તારીખે", [(D(11, 10), D(11, 10)), (D(11, 25), D(11, 25))]),
+    ("આ મહિને 10 તારીખે", [(D(11, 10), D(11, 10))]),
+    ("આવતા મહિનાની 5 તારીખે", [(D(12, 5), D(12, 5))]),
+    ("બીસ દિન બાદ", [(D(11, 24), D(11, 24))]),
+    ("દો હફ્તે મેં", [(TODAY, D(11, 18))]),
     # in words, and with no date at all
     ("અગિયાર નવેમ્બરે", [(D(11, 11), D(11, 11))]),
     ("બાર તારીખે", [(D(11, 12), D(11, 12))]),
@@ -69,3 +81,10 @@ def test_spans(text, want):
 
 def test_a_festival_with_no_known_date_ahead_is_open_ended():
     assert dates.spans("દિવાળી પછી", date(2029, 11, 1)) == [(date(2029, 11, 1), dates.OPEN)]
+
+
+def test_a_festival_on_its_day_must_be_ahead():
+    """Diwali 2027 is the last in the table: "on Diwali" said after it is open-ended, not that past day."""
+    later = date(2027, 11, 15)
+    assert dates.spans("દિવાળીએ પેમેન્ટ આપી દેજો.", later) == [(later, dates.OPEN)]
+    assert dates.spans("દિવાળી પછી", date(2027, 11, 5)) == [(date(2027, 10, 29), dates.OPEN)]  # (the recent one)

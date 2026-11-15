@@ -59,10 +59,10 @@ HANDED_OVER_TOPICS = {"discount", "interest or penalty", "rate"}
 # block here costs little: she says the standard hand-over line instead.)
 HANDING_OVER = re.compile(
     r"ફોન કરશે|ફોન કરી લેશે|વાત કરી લેજો|વાત કરશે|વાત કરી લેશે|કૉલ કરશે|કોલ કરશે|ફોન જોડ|ચર્ચા કરી લેજો"
-    r"|નક્કી કરશે|નક્કી કરે|નક્કી કરજો|વાત કરાવ|વાત કરવી|ફોન કરજો|વાત મુકીશ|જ કહેશે|જણાવશે|જણાવીશ|જણાવું|નિર્ણય લેશે|સત્તા નથી|मालिक|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
+    r"|નક્કી કરશે|નક્કી કરે|નક્કી કરજો|વાત કરાવ|વાત કરવી|ફોન કરજો|વાત મુકીશ|જ કહેશે|જણાવશે|જણાવીશ|જણાવું|નિર્ણય લેશે|સત્તા નથી|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
 
 AMOUNT = re.compile(r"₹\s?([\d,]+)|([\d,]+)\s*(?:રૂપિયા|રૂ\.|રૂ\b|/-|rupees|rs\b)"
-                    r"|(?<![\d,])(\d{1,2}(?:,\d{2})*,\d{3})(?![\d,])")  # "1,50,000 નું", "90,000": money
+                    r"|(?<![\d,])(\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?![\d,])")  # "1,50,000", "100,000"
 CURRENCY = ("રૂપિય", "રૂ", "rupee")
 
 
@@ -109,7 +109,9 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
         if named and not (handing_over and topic in HANDED_OVER_TOPICS):
             return f"she was about to talk about {topic}: {text}"
     for topic, pattern in NEVER_PHRASES.items():
-        if pattern.search(lower) and not (handing_over and topic in HANDED_OVER_TOPICS):
+        # ("માફ કરી દઉં", "ઓછું કરી આપીશું" are offers in themselves: a hand-over clause beside them
+        # doesn't take them back, unlike the bare word "ડિસ્કાઉન્ટ" in "ડિસ્કાઉન્ટ બાબતે શેઠ ફોન કરશે")
+        if pattern.search(lower):
             return f"she was about to talk about {topic}: {text}"
 
     # Amounts: what's owed, a bill, what the customer said, or what's left after it.
@@ -125,7 +127,10 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     # Dates: the last part by split_days; past promise_days only for a part, never the whole amount.
     split_by = today + timedelta(days=settings["split_days"])
     promise_by = today + timedelta(days=settings["promise_days"])
-    whole = balance in _amounts(text) or bool(WHOLE.search(text))
+    named = _amounts(text)
+    # the whole amount: named (or "પૂરા પૈસા"), but not as the source of a smaller part
+    # ("₹1,20,000 માંથી ₹50,000 કાલે")
+    whole = (balance in named or bool(WHOLE.search(text))) and not any(0 < n < balance for n in named)
     in_parts = _in_parts(text, history, balance)
     for start, until in dates.spans(text, today):
         if until > split_by:
@@ -143,10 +148,16 @@ WHOLE = re.compile(r"પૂરા|પુરા|પૂરેપૂરા|પૂ�
 
 
 def _in_parts(text: str, history: list[dict], balance: int) -> bool:
-    """Is a part payment being talked about: an amount below the balance, or "the rest"?"""
-    for line in [text, *(h["text"] for h in history)]:
-        money = _amounts(line) | {n for n in _numbers(line) if n >= 1_000}  # (not "18 તારીખે")
-        if any(0 < n < balance for n in money) or any(w in line for w in REST):
+    """Is a part payment being talked about: an amount below the balance, or "the rest"?
+
+    Only money ("₹50,000", "50 હજાર", "50,000"), not any number ("UTR 4528", "18 તારીખે"); and not
+    her mention of a bill ("₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે"), which is no payment plan."""
+    for line, earlier in [(text, False), *((h["text"], h["who"] == "agent") for h in history)]:
+        if any(w in line for w in REST):
+            return True
+        if earlier and "બિલ" in line:  # (her earlier mention of a bill; this sentence's plan counts)
+            continue
+        if any(0 < n < balance for n in _amounts(line)):
             return True
     return False
 

@@ -82,12 +82,17 @@ DAY_WORD = re.compile(r"([઀-૿]+)(?=\s*(?:તારીખ|" + "|".join(m[:3] 
 WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|कभी\s*भी")
 
 
+ORDINALS = {"પહેલી": 1, "બીજી": 2, "ત્રીજી": 3, "ચોથી": 4, "છઠ્ઠી": 6}  # then "પાંચમી", "પંદરમી": Nમી
+
+
 def _days_in_digits(text: str) -> str:
-    """"અગિયાર નવેમ્બર", "બાર તારીખે" -> "11 નવેમ્બર", "12 તારીખે", for the patterns below."""
+    """"અગિયાર નવેમ્બર", "બાર તારીખે", "પંદરમી તારીખે" -> "11 નવેમ્બર", "12 તારીખે", "15 તારીખે", for
+    the patterns below; and "બે-ત્રણ મહિના" -> "બે ત્રણ મહિના" (the larger number counts)."""
     def digits(m: re.Match) -> str:
-        value = extract.NUMBER_WORDS.get(m.group(1))
-        return str(value) if isinstance(value, int) and 1 <= value <= 31 else m.group(1)
-    return DAY_WORD.sub(digits, text)
+        word = m.group(1)
+        value = ORDINALS.get(word) or extract.NUMBER_WORDS.get(word) or extract.NUMBER_WORDS.get(word.removesuffix("મી"))
+        return str(value) if isinstance(value, int) and 1 <= value <= 31 else word
+    return DAY_WORD.sub(digits, re.sub(r"(?<=[઀-૿\d])-(?=[઀-૿\d])", " ", text))
 
 
 def _month_end(day: date) -> date:
@@ -111,11 +116,16 @@ def _calendar_dates(text: str, today: date) -> list[Span]:
         if when < today - timedelta(days=180):  # "5 જાન્યુઆરી" said in November: next year
             when = when.replace(year=today.year + 1)
         out.append(_bounded((when, when), _after_match(text, m), today))
-    if out:
-        return out
+    taken = [m.span() for m in DAY_MONTH.finditer(text)]
     for m in DAY_OF_MONTH.finditer(text):
+        if any(a <= m.start() < b for a, b in taken):
+            continue
         day, year, month = int(m.group(1)), today.year, today.month
-        if day < today.day:
+        before = _tokens(text[:m.start()])[-3:]  # "આવતા મહિનાની 5 તારીખે", "આ મહિનાની 25 તારીખે"
+        said_month = next((i for i, t in enumerate(before) if t.startswith(MONTH)), None)
+        if said_month is not None and said_month and before[said_month - 1] in NEXT:
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        elif said_month is None and day < today.day:
             year, month = (year + 1, 1) if month == 12 else (year, month + 1)
         try:
             when = date(year, month, day)
@@ -220,12 +230,18 @@ def _relative_span(tok: str, prev: str, nxt: str, today: date) -> Span | None:
     return None
 
 
-def _month_alone(tok: str, prev: str, today: date) -> Span | None:
-    """A month named without a day ("જાન્યુઆરીમાં"): all of it; this year's if this month or
-    recent, else next year's. ("5 ડિસેમ્બર", with the day, is read by _calendar_dates.)"""
+MAY = {"મેમાં", "મેના", "મેની", "મેનું", "મેનો"}  # "મે" alone is also "I" / "in" (Hindi "मैं", "में")
+
+
+def _month_alone(tok: str, prev: str, nxt: str, today: date) -> Span | None:
+    """A month named without a day ("જાન્યુઆરીમાં", "મે મહિનામાં"): all of it; this year's if this
+    month or recent, else next year's. ("5 ડિસેમ્બર", with the day, is read by _calendar_dates.)"""
     if prev[:1].isdigit():
         return None
-    month = next((i for i, name in enumerate(MONTH_NAMES, 1) if len(name) > 2 and tok.startswith(name)), None)
+    if tok in MAY or (tok == "મે" and nxt.startswith(MONTH)):
+        month = 5
+    else:
+        month = next((i for i, name in enumerate(MONTH_NAMES, 1) if len(name) > 2 and tok.startswith(name)), None)
     if month is None:
         return None
     first = date(today.year, month, 1)
@@ -240,16 +256,24 @@ def _relative(tokens: list[str], today: date) -> list[Span]:
     for i, tok in enumerate(tokens):
         prev = tokens[i - 1] if i else ""
         nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
-        if span := _relative_span(tok, prev, nxt, today) or _month_alone(tok, prev, today):
+        # "આ મહિને 10 તારીખે", "આવતા મહિનાની 5 તારીખે": the week or month only places the day
+        # (read by _calendar_dates), it is no date of its own
+        if tok.startswith(WEEK + MONTH) and nxt[:1].isdigit() and tokens[i + 2:i + 3] and \
+                tokens[i + 2].startswith("તારીખ"):
+            continue
+        if span := _relative_span(tok, prev, nxt, today) or _month_alone(tok, prev, nxt, today):
             out.append(_bounded(span, tokens[i + 1:], today))
     return out
 
 
-def _festival_day(name: str, today: date) -> date | None:
-    """The festival's date nearest today ("દિવાળી પછી" a week after Diwali means that Diwali)."""
+def _festival_day(name: str, today: date, after: bool) -> date | None:
+    """The festival's next date; for "after X", the nearest one ("દિવાળી પછી" said a week after
+    Diwali means that Diwali). None if the table has no such date (then: open-ended)."""
     days = [date.fromisoformat(d) for d in FESTIVALS[name]]
-    near = [d for d in days if abs((d - today).days) <= 183]
-    return min(near, key=lambda d: abs((d - today).days)) if near else None
+    if after:
+        near = [d for d in days if abs((d - today).days) <= 183]
+        return min(near, key=lambda d: abs((d - today).days)) if near else None
+    return min((d for d in days if d >= today), default=None)
 
 
 def _festivals(tokens: list[str], today: date) -> list[Span]:
@@ -275,7 +299,7 @@ def _festivals(tokens: list[str], today: date) -> list[Span]:
         on_the_day = suffix in ("ના", "ની") and following[:1] and following[0].startswith("દિવસ")
         if not (suffix in DATE_SUFFIXES or on_the_day or _cue(following) or following[:1] in (["પર"], ["ઉપર"])):
             continue  # named, but not as a date
-        day = _festival_day(name, today)
+        day = _festival_day(name, today, after=_cue(following) == "after")
         out.append(_bounded((day, day), following, today) if day else (today, OPEN))
     return out
 

@@ -125,6 +125,15 @@ MUST_BLOCK = [
     pytest.param("ટ્રેલર પેમેન્ટ આવે પછી જ રવાના થશે.", id="fuzz-after-payment-only"),
     pytest.param("ફેક્ટરીથી નવો ડિસ્પેચ અટકાવી દેવામાં આવશે.", id="fuzz-dispatch-held"),
     pytest.param("તમારું સપ્લાય કનેક્શન કાપવું પડશે.", id="fuzz-supply-cut"),
+    # found in review (#2)
+    pytest.param("બાકીનું માફ કરી દઉં, શેઠ તમને ફોન કરશે.", id="review-waiver-with-handover"),
+    pytest.param("માલિકે 5% ડિસ્કાઉન્ટ આપી દીધું છે.", id="review-owner-is-no-handover"),
+    pytest.param("તો 25 તારીખે ₹50,000 અને 10 નવેમ્બરે ₹70,000 આપજો.", id="review-two-date-forms"),
+    pytest.param("બે-ત્રણ મહિના પછી આપજો.", id="review-range"),
+    pytest.param("પંદરમી તારીખ પછી આપજો.", id="review-ordinal"),
+    pytest.param("મે મહિનામાં આપજો.", id="review-may"),
+    pytest.param("બીસ દિન બાદ પેમેન્ટ કરી દેજો.", id="review-hindi-din"),
+    pytest.param("100,000 નું પેમેન્ટ બાકી છે.", id="review-western-grouping"),
 ]
 
 MUST_PASS = [
@@ -166,6 +175,9 @@ MUST_PASS = [
     "UTR 4528 હોય તો કહેજો ને.",                              # digits that aren't money
     "તમે 12 તારીખે 50,000 અને 19 નવેમ્બરે 70,000 આપશો તો અમારી પોલિસીમાં આવી જશે.",  # policy, not police
     "ભાવ બાબતે મારી પાસે માહિતી નથી, શેઠ આવે એટલે વાત કરાવું.",
+    "₹1,20,000 માંથી કાલે ₹50,000 અને 18 તારીખે બાકીના ₹70,000 આપશો ને?",  # a split, not the whole
+    "આ મહિને 10 તારીખે થઈ જશે ને?",
+    "તમે 50,000 નું બિલ 9 નવેમ્બરે અને 70,000 નું બિલ 16 નવેમ્બરે આપશો તો ચાલી જશે.",  # a split by bill
 ]
 
 
@@ -223,3 +235,11 @@ def test_audit_failing_or_slow_finds_nothing(monkeypatch):
         monkeypatch.setattr(llm, "generate_json", fake)
         assert asyncio.run(guard.audit(["બજારમાં તમારી શાખ જશે."])) == []
     assert asyncio.run(guard.audit([])) == []
+
+
+def test_part_payments_need_money_said_not_any_number():
+    """Past 7 days only for a part payment: "UTR 4528" or her mention of a bill is no payment plan."""
+    assert check("તો 18 તારીખે પેમેન્ટ કરી દેશો ને?", said=["UTR 4528 છે"])
+    history = [{"who": "agent", "text": "₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે."}]
+    assert guard.problem("તો 18 તારીખે પેમેન્ટ કરી દેશો ને?", SETTINGS, CUSTOMER, history, TODAY)
+    assert check("તો 18 તારીખે, બરાબર ને?", said=["અત્યારે 50,000 મોકલું"]) is None
