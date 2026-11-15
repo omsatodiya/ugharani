@@ -1,5 +1,7 @@
 # Ugharani: auto ઉઘરાણી
 
+[![tests](https://github.com/omsatodiya/ugharani/actions/workflows/tests.yml/badge.svg)](https://github.com/omsatodiya/ugharani/actions/workflows/tests.yml)
+
 Every Gujarat trader who sells on credit pays someone to phone dealers about pending payments
 ("ઉઘરાણી"). Ugharani is that person as a voice agent: **કાવ્યા** from Genius Polyplast, Gondal
 calls the dealer, talks like a Saurashtra office girl on the phone (Gujarati, or Hindi if they
@@ -51,7 +53,7 @@ What keeps it safe for the business:
 - After the call: outcome, promised date and amount, payment mode, owner's to-do (callback,
   dispute, statement on WhatsApp), saved with the transcript.
 
-Tests: `uv run pytest` (164 tests: calls with Gnani and Gemini faked, the checker, the rules),
+Tests: `uv run pytest` (runs on every push in CI; calls with Gnani and Gemini faked, the checker, the rules),
 `scripts/browser_check.py` (the real phone page in headless Chrome against a fake Gnani, with a
 scripted mic that cuts in and coughs), `scripts/agent_chat.py` (Gemini plays tricky customers,
 free), `scripts/live_call.py` (a real call, a second Timbre voice as the customer; uses credits).

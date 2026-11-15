@@ -1,0 +1,26 @@
+# Runs the test suite (Gnani and Gemini faked: no keys, no credits) on every push and pull request.
+# Free for public repositories.
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"   # as in the Dockerfile
+          enable-cache: true
+      - run: uv sync --locked
+      - name: lint (real errors only)
+        run: uvx ruff check --select F ugharani scripts tests
+      - name: tests
+        run: uv run pytest -q
