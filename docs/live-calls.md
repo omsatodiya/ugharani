@@ -119,6 +119,22 @@ counts as open-ended, so it is never let through.
 In its place she says "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." (a bundled clip), the
 rest of that reply is dropped, and the reason is saved on the call (`calls.flags`) for the owner.
 
+**After the call, a second opinion (Nov 15).** Threats, stopping supply and discounts can be said in
+endless ways ("ટ્રેલર રવાના નહીં થાય", "લાયસન્સ રદ", "રાઉન્ડ ઓફ"); the word lists catch the common
+ones. Gemini checking each sentence before it is spoken was measured on the free tier: median
+2.3 s, 1 in 10 over 7.9 s, so it would have slowed every reply by ~2 s and still timed out half the
+time. Instead `guard.audit` sends all her sentences from the call to Gemini in one request, next to
+the notes; anything it finds is saved on the call (`calls.audit`, separate from `flags`: it *was*
+said) and the owner's app shows it as a to-do with the line, to call and correct.
+
+`scripts/guard_fuzz.py` tests both: Gemini writes rule-breaking and fine sentences (Gujarati, Hindi,
+mixed; digits and words), and the misses are saved for a person to read. Results on Nov 15:
+
+| | words, first run | words, after fixes, fresh sentences | after-call check |
+|---|---|---|---|
+| rule-breaking caught | 158/205 | 179/180 (dates, amounts, interest, rates: all) | 13/15 |
+| fine ones blocked | 15/74 (20%) | 0/116 | 0/15 |
+
 Also new in the prompt: the open bills ("which bill?"), statement and bank details promised on
 WhatsApp (an owner task in the notes), dues kept private when someone else answers, an honest
 answer to "are you a robot?", one try within the limits before handing over, never the same
