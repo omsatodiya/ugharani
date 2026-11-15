@@ -51,10 +51,7 @@ def test_no_date_past_the_owners_limit():
     assert check("તો 30 દિવસમાં કરી દેજો.")
 
 
-# ---------- gaps found on 2026-11-15, fixed step by step in phase 1 (docs/plan.md) ----------
-
-
-GAP = pytest.mark.xfail(strict=True, reason="phase 1: not caught yet")
+# ---------- found on 2026-11-15 and fixed in phase 1; and lines that must stay allowed ----------
 
 MUST_BLOCK = [
     # amounts in words, on no bill
@@ -74,10 +71,14 @@ MUST_BLOCK = [
     # the whole amount past promise_days (7)
     pytest.param("તો 14 તારીખે ₹1,20,000, બરાબર ને?", id="full-past-7-days"),
     # discounts and waivers said other ways
-    pytest.param("તમે 10% ઓછા આપજો.", marks=GAP, id="percent-less"),
-    pytest.param("થોડું ઓછું કરી આપીશું.", marks=GAP, id="ochhu-kari"),
-    pytest.param("બાકીનું માફ કરી દઈશું.", marks=GAP, id="maaf"),
-    pytest.param("ઠીક હૈ, થોડા કમ કર દેંગે.", marks=GAP, id="hindi-kam-kar"),
+    pytest.param("તમે 10% ઓછા આપજો.", id="percent-less"),
+    pytest.param("થોડું ઓછું કરી આપીશું.", id="ochhu-kari"),
+    pytest.param("બાકીનું માફ કરી દઈશું.", id="maaf"),
+    pytest.param("ઠીક હૈ, થોડા કમ કર દેંગે.", id="hindi-kam-kar"),
+    pytest.param("બે ટકા ઓછા આપજો.", id="words-percent"),
+    pytest.param("5% કેશ ડિસ્કાઉન્ટ મળશે.", id="cash-discount"),
+    pytest.param("વ્યાજ માફ કરી દઈશું.", id="interest-waived"),
+    pytest.param("ઓછા ભરશો તો ચાલશે.", id="ochha-bharsho"),
 ]
 
 MUST_PASS = [
@@ -89,6 +90,12 @@ MUST_PASS = [
     "તો 10 તારીખે ₹1,20,000 RTGS, બરાબર ને?",  # the whole amount within 7 days
     "તો 10 તારીખે ₹50,000 અને 18 તારીખે ₹70,000, બરાબર ને?",  # parts, the last within 15 days
     "દિવાળીની શુભકામનાઓ.",
+    "માફ કરજો, લાઇન થોડી ખરાબ છે. ફરી કહેશો?",       # sorry, not a waiver
+    "સો ટકા થઈ જશે ને?",                              # "definitely"
+    "100 ટકા, બરાબર ને?",
+    "₹1,20,000 માંથી ₹50,000 તો આવી જશે ને?",
+    "ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે.",           # handing over
+    "ઓછું-વધતું હોય તો શેઠ તમને ફોન કરશે.",
 ]
 
 
@@ -107,3 +114,12 @@ def test_the_whole_amount_only_within_promise_days():
     assert check("તો 11 તારીખે, બરાબર ને?") is None  # 7 days
     assert check("તો 14 તારીખે ₹1,20,000, બરાબર ને?", said=["10 તારીખે 50 હજાર આપીશ"])  # whole, named
     assert check("તો આવતા અઠવાડિયે થઈ જશે ને?") is None  # starts Monday the 9th: can be narrowed
+
+
+def test_her_fixed_lines_always_pass():
+    from ugharani import agent, followup, live
+    settings = {**followup.DEFAULTS, **SETTINGS}
+    fixed = [*live.FIXED_LINES, live.time_up_bye(settings), agent.greeting(CUSTOMER), agent.intro(settings),
+             agent.intro(settings, False), agent.fallback_ask(CUSTOMER), guard.instead(settings, CUSTOMER)]
+    for line in fixed:
+        assert check(line) is None, line

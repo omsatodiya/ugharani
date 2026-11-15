@@ -20,6 +20,14 @@ NEVER = {
     "stopping supply": ["સપ્લાય બંધ", "માલ બંધ", "ઓર્ડર બંધ", "બ્લોક", "block"],
     "rate": ["ભાવ", "rate", "રેટ"],
 }
+# Phrases, not single words: "ઓછું કરી આપીશું" (we'll reduce it), "માફ કરી દઈશું" (we'll waive it,
+# but "માફ કરજો" is "sorry"), any percentage but 100 ("સો ટકા" is "definitely").
+NEVER_PHRASES = {
+    "discount": re.compile(
+        r"(?<![\d.])(?!100\b)\d{1,2}(?:\.\d+)?\s*(?:%|ટકા|પર્સન્ટ|percent)"
+        r"|(?:ઓછ[ુંાીો]+|કમ)\s+(?:કરી|કર|આપ|ભર|લઈ|લે|દે|ચાલશે)"
+        r"|માફ\s*(?:કરી\s*દ|કરીશ|કરીએ|કર\s*દ|થઈ\s*જ|થશે|હો\s*જ)"),
+}
 # A sentence that hands the topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે") may name it.
 HANDING_OVER = re.compile(r"ફોન કરશે|ફોન કરી લેશે|વાત કરી લેજો|વાત કરશે|વાત કરી લેશે|કૉલ કરશે|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
 
@@ -62,6 +70,9 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     handing_over = bool(HANDING_OVER.search(text))
     for topic, terms in NEVER.items():
         if any((t in lower if " " in t else any(_is(w, t) for w in words)) for t in terms) and not handing_over:
+            return f"she was about to talk about {topic}: {text}"
+    for topic, pattern in NEVER_PHRASES.items():
+        if pattern.search(lower) and not handing_over:
             return f"she was about to talk about {topic}: {text}"
 
     # Amounts: what's owed, a bill, what the customer said, or what's left after it.
