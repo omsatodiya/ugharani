@@ -113,8 +113,9 @@ weekdays, "કાલે", "પરમ દિવસે", "આવતા અઠવ�
 next month), "જાન્યુઆરીમાં", "ત્રીસ દિવસમાં", "ત્રણ અઠવાડિયામાં", Hindi "અગલે હફ્તે"; "X પછી"
 has no end ("દિવાળી પછી", "15 તારીખ પછી"), except a duration ("7 દિવસ પછી" is day 7); "X
 પહેલાં" / "X સુધી" end at X. Festivals (દિવાળી, લાભ પાંચમ, દેવ દિવાળી, ઉત્તરાયણ, હોળી, …) come
-from a table of dates for 2026-27 that must be extended each year; a festival with no date ahead
-counts as open-ended, so it is never let through.
+from a table of dates for 2026-27 that must be extended each year. A payment on or by a festival
+takes its next date; only "X પછી" may mean one just past ("દિવાળી પછી" a week after Diwali). With
+no date ahead in the table, the festival counts as open-ended, so it is never let through.
 
 In its place she says "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." (a bundled clip), the
 rest of that reply is dropped, and the reason is saved on the call (`calls.flags`) for the owner.
