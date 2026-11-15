@@ -73,15 +73,21 @@ Every bug found on Nov 15 becomes a test first, then the fix.
 | Discount said other ways ("10% ઓછા", "ઓછું કરી આપીશું", "માફ") | More terms and patterns, Gujarati and Hindi |
 | Festival names: "દિવાળી", "નવરાત્રી", "ઉત્તરાયણ" | Resolved to their date this year (owner's holidays list + a small built-in table) |
 
-Done when: a table of ~80 tricky sentences (`tests/test_guard.py`) all pass, and the fuzz run
-(below) finds no blocked-topic sentence that was spoken.
+Done when: a table of ~80 tricky sentences (`tests/test_guard.py`) all pass, and the generated
+run passes: `scripts/guard_fuzz.py` asks Gemini (free tier) for 200 sentences that break a rule
+(discounts, interest, threats, rates, unknown amounts, dates past the limits; Gujarati, Hindi and
+mixed, digits and words) and 100 that don't, feeds each to `guard.problem()` with a fixed customer
+(balance ₹1,20,000) and date, and saves the misses to `out/guard_fuzz.json`. Pass: every
+rule-breaking sentence is blocked and at most 5% of the allowed ones are (a false block only costs
+a hand-over). Misses that are real become rows in the sentence table.
 
 ## Phase 2: Gujarati conversation correctness (2-3 days)
 
-1. **Language from Gnani, not word lists.** Live STT with `language_code: gu-IN,hi-IN,en-IN`;
-   use `detected_language_code` per transcript; the word list stays only as a fallback, without
-   words shared with Gujarati ("પર", "કી", "કા"…). Verify on recorded Hindi and Gujarati audio
-   that Gujarati transcripts are not worse than with `gu-IN` alone (if they are, keep `gu-IN`).
+1. **Language from Gnani, not word lists.** Built behind a setting, **off by default**: live STT
+   with `language_code: gu-IN,hi-IN,en-IN`, `detected_language_code` per transcript. It is switched
+   on only after Phase 3 shows Gujarati transcripts are not worse than with `gu-IN` alone. The word
+   list stays as the fallback (and the default until then), without words shared with Gujarati
+   ("પર", "કી", "કા"…).
 2. **Hold vs call back.** "બે મિનિટ પછી ફોન કરો" / "પછી ફોન કરજો" is a callback (ask when,
    then goodbye), not a hold. Add "જરા રાહ જુઓ", "એક સેકન્ડ હં", "ચાલુ રાખો". Tests for each.
 3. **Disclosure setting.** `disclose_ai` (default on): the intro becomes "હા નમસ્તે. હું
@@ -105,6 +111,10 @@ Done when: the suite passes 3 runs in a row; every scenario's notes are right.
 1. **Recording page** `/record.html`: a list of ~50 prompts (amounts "સાડા ત્રણ લાખ", "પોણા બે",
    dates "પરમ દિવસે", "આવતા ગુરુવારે", names, payment modes, UTR digits, Hindi lines); the
    person reads or answers each; saved as WAV with the expected text. Shared with 3-5 people.
+   Controls: a consent screen first (what is recorded, why, who hears it, how to delete); the
+   page and the clips need the owner's key (`?k=`), never public; clips stored outside git and
+   deleted on request or when the evaluation is done; the prompts use made-up names, amounts and
+   UTR numbers only, never a real account or payment identifier.
 2. **Free datasets**: Google FLEURS (gu_in) and a Gujarati slice of AI4Bharat IndicVoices,
    downloaded to a local folder (not in git).
 3. **Scorer** `scripts/stt_eval.py`: Prisma live (as on a call) on every clip; reports exact
@@ -206,7 +216,8 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 - 0.1 Restore LF line endings; `.gitattributes` (`* text=auto eol=lf`); `.DS_Store` ignored.
 - 0.2 Commit this plan (`docs/plan.md`).
 - 0.3 Freeze "today" in the live-call tests so they pass on any date.
-- 0.4 CI: GitHub Actions runs `uv run pytest` on every push and PR; badge in the README.
+- 0.4 CI: GitHub Actions runs `uv run pytest` on every push to any branch (PRs show those
+  checks); badge in the README.
 
 ### Phase 1 — `phase-1-checker`
 - 1.1 `tests/test_guard.py`: the Nov 15 gaps as failing cases (marked xfail), so the fixes show.
@@ -217,6 +228,7 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 - 1.5 The 7-day rule for the full amount in code.
 - 1.6 More discount/waiver wording ("% ઓછા", "ઓછું કરી", "માફ"), Gujarati and Hindi.
 - 1.7 Sentence table grown to ~80 cases; docs/live-calls.md updated.
+- 1.8 `scripts/guard_fuzz.py`: the generated run described in Phase 1; its misses fixed.
 
 ### Phase 2 — `phase-2-conversation`
 - 2.1 `ugharani/lang/gu.py`: move the Gujarati word lists out of live.py/agent.py/guard.py (no
@@ -230,7 +242,8 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 - 2.7 `scripts/agent_chat.py` → pass/fail suite with code checks; new scenarios.
 
 ### Phase 3 — `phase-3-hearing`
-- 3.1 Recording page `/record.html` + prompt list + saving clips with expected text.
+- 3.1 Recording page `/record.html` + prompt list + saving clips with expected text, behind the
+  owner's key, with the consent screen and deletion.
 - 3.2 Dataset fetch script (FLEURS gu_in, IndicVoices slice) to a git-ignored folder.
 - 3.3 `scripts/stt_eval.py`: amounts/dates exact match, names, WER; a report file.
 - 3.4 Keyterms and substitution map from the results; re-measure.
