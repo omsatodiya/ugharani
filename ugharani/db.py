@@ -3,6 +3,7 @@
 import sqlite3
 from datetime import date
 
+from ugharani import clock
 from ugharani.config import ledger_db_path
 from ugharani.extract import ParsedEntry
 from ugharani.names import match
@@ -90,7 +91,7 @@ def add_entry(conn: sqlite3.Connection, entry: ParsedEntry, transcript: str, tod
             entry.kind,
             resolve_buyer(conn, entry.buyer),
             entry.amount,
-            (today or date.today()).isoformat(),
+            (today or clock.today()).isoformat(),
             entry.due_date.isoformat() if entry.due_date else None,
             transcript,
         ),

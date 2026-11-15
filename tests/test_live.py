@@ -4,14 +4,13 @@ import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
-from datetime import date
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ugharani import gnani, live, llm, main, speech
+from ugharani import clock, gnani, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
@@ -91,7 +90,7 @@ def phone(tmp_path, monkeypatch):
 
     client = TestClient(main.app)
     client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
-                                  "due_date": date.today().isoformat()})
+                                  "due_date": clock.today().isoformat()})
     client.put("/customers/રમેશભાઈ", json={"phone": "9800000001", "deals_with": "મનીષભાઈ",
                                            "firm": "શ્રીજી હાર્ડવેર", "city": "જેતપુર"})
     call = client.post("/calls", json={"customer": "રમેશભાઈ"}).json()

@@ -7,7 +7,7 @@ import json
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
-from ugharani import db, followup
+from ugharani import clock, db, followup
 from ugharani.extract import parse
 
 # (transcript, days before today it was recorded)
@@ -82,7 +82,7 @@ def seed(conn: sqlite3.Connection, today: date | None = None) -> int:
     """Add the sample entries to an empty ledger. Returns how many were added."""
     if db.list_entries(conn):
         return 0
-    today = today or date.today()
+    today = today or clock.today()
     for text, days_ago in SAMPLE:
         on = today - timedelta(days=days_ago)
         db.add_entry(conn, parse(text, today=on), text, today=on)

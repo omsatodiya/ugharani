@@ -22,3 +22,12 @@ def fresh_gemini_order(monkeypatch):
     """llm remembers which model answered last; every test starts without that memory."""
     from ugharani import llm
     monkeypatch.setattr(llm, "_last_winner", None)
+
+
+TODAY = "2026-11-03"  # a Tuesday early in the month: "10 તારીખે" is within the owner's limits
+
+
+@pytest.fixture(autouse=True)
+def fixed_today(monkeypatch):
+    """Every test runs on the same date, so none depends on the day it happens to run."""
+    monkeypatch.setenv("UGHARANI_TODAY", TODAY)

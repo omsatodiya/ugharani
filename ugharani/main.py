@@ -5,7 +5,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from ugharani import agent, db, followup, gnani, live, llm, reminders, speech
+from ugharani import agent, clock, db, followup, gnani, live, llm, reminders, speech
 from ugharani.extract import ParsedEntry, merge, missing_fields, parse
 from ugharani.seed import seed
 
@@ -108,7 +108,7 @@ async def voice_entry(audio: UploadFile, draft: str | None = Form(None)) -> dict
             raise HTTPException(status_code=502, detail=f"Prisma STT failed: {e}")
 
         transcript = stt["transcript"]
-        today = date.today()
+        today = clock.today()
         entry = parse(transcript, today=today)
         if previous:
             entry = merge(previous.entry(), entry)
@@ -168,7 +168,7 @@ def balances() -> list[dict]:
 @app.get("/summary")
 async def summary(today: date | None = None) -> dict:
     """The trader's daily summary: overdue, due today, due soon. `today` lets a demo jump ahead."""
-    today = today or date.today()
+    today = today or clock.today()
     conn = db.connect()
     try:
         items = reminders.due_items(conn, today)
@@ -181,7 +181,7 @@ async def summary(today: date | None = None) -> dict:
 @app.get("/reminders/{buyer}")
 async def buyer_reminder(buyer: str, today: date | None = None) -> dict:
     """A polite reminder for one buyer, for the trader to send from their own WhatsApp."""
-    today = today or date.today()
+    today = today or clock.today()
     conn = db.connect()
     try:
         reminder = reminders.buyer_reminder(conn, db.resolve_buyer(conn, buyer), today)
@@ -259,7 +259,7 @@ def call_queue(today: date | None = None) -> list[dict]:
     """Who the agent will call today under the owner's rules. `today` lets a demo jump ahead."""
     conn = db.connect()
     try:
-        return followup.to_call(conn, today or date.today())
+        return followup.to_call(conn, today or clock.today())
     finally:
         conn.close()
 
@@ -274,7 +274,7 @@ DEMO_USED_UP = "આજના ડેમો ફોન પૂરા થયા, ક�
 
 
 def demo_calls_left() -> int:
-    return max(0, int(os.getenv("LIVE_CALLS_PER_DAY", "10")) - _demo_calls.get(date.today(), 0))
+    return max(0, int(os.getenv("LIVE_CALLS_PER_DAY", "10")) - _demo_calls.get(clock.today(), 0))
 
 
 def is_owner(key: str | None) -> bool:
@@ -293,7 +293,7 @@ def spend_demo_call(key: str | None) -> bool:
         return True
     if demo_calls_left() <= 0:
         return False
-    today = date.today()
+    today = clock.today()
     for day in [d for d in _demo_calls if d != today]:
         del _demo_calls[day]
     _demo_calls[today] = _demo_calls.get(today, 0) + 1
@@ -308,7 +308,7 @@ def call_hours(k: str | None = None) -> dict:
         rules = followup.get_settings(conn)
     finally:
         conn.close()
-    return {"open": followup.calling_time(rules, datetime.now()), "hours": rules["call_hours"],
+    return {"open": followup.calling_time(rules, clock.now()), "hours": rules["call_hours"],
             "sunday": rules["call_on_sunday"], "demo_left": None if is_owner(k) else demo_calls_left()}
 
 
@@ -350,11 +350,11 @@ def run_queue(tasks: BackgroundTasks, today: date | None = None, anytime: bool =
     conn = db.connect()
     try:
         rules = followup.get_settings(conn)
-        if not anytime and not followup.calling_time(rules, datetime.now()):
+        if not anytime and not followup.calling_time(rules, clock.now()):
             return []
         check_demo_budget(k)
         rung = []
-        for q in followup.to_call(conn, today or date.today()):
+        for q in followup.to_call(conn, today or clock.today()):
             tasks.add_task(live.warm_up, rules, _customer(conn, q["customer"]))
             rung.append(followup.get_call(conn, followup.start_call(conn, q["customer"], q["amount"], "auto")))
         return rung
@@ -412,7 +412,7 @@ async def write_notes(call_id: int, rules: dict, customer: dict, history: list[d
     """After a live call: the owner's notes (outcome, promise, what they must do), like the staff
     member writing them in the sheet. A Gemini failure leaves the call saved without notes."""
     try:
-        n = await agent.notes(rules, customer, history, date.today())
+        n = await agent.notes(rules, customer, history, clock.today())
     except llm.LLMError as e:
         log.warning("call %s: notes failed: %s", call_id, e)
         return
@@ -462,7 +462,7 @@ async def live_call(ws: WebSocket, call_id: int) -> None:
         return
     _live_calls.add(call_id)
     await ws.accept()
-    session = live.LiveCall(rules, customer, date.today(), previous, ws.send_bytes, ws.send_json)
+    session = live.LiveCall(rules, customer, clock.today(), previous, ws.send_bytes, ws.send_json)
     try:
         terms = [customer["name"], *(customer.get(k) for k in ("firm", "city", "deals_with")),
                  rules["business_name_spoken"]]

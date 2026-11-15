@@ -7,9 +7,9 @@ import asyncio
 import sys
 from datetime import date
 
-from ugharani import agent, followup, llm
+from ugharani import agent, clock, followup, llm
 
-TODAY = date.today()
+TODAY = clock.today()
 SETTINGS = {**{k: followup.TYPES.get(k, str)(v) if followup.TYPES.get(k, str) is not bool else v == "1"
                for k, v in followup.DEFAULTS.items()}}
 
