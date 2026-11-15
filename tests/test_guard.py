@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from ugharani import guard
 
 TODAY = date(2026, 11, 4)
@@ -46,3 +48,54 @@ def test_no_date_past_the_owners_limit():
     assert check("તો 2 ડિસેમ્બરે બાકીના, બરાબર ને?")
     assert check("તો 3 તારીખે, બરાબર ને?")  # the 3rd of next month
     assert check("તો 30 દિવસમાં કરી દેજો.")
+
+
+# ---------- gaps found on 2026-11-15, fixed step by step in phase 1 (docs/plan.md) ----------
+
+
+GAP = pytest.mark.xfail(strict=True, reason="phase 1: not caught yet")
+
+MUST_BLOCK = [
+    # amounts in words, on no bill
+    pytest.param("તો 75 હજાર મોકલી દેજો.", marks=GAP, id="words-75-hazar"),
+    pytest.param("એક લાખ દસ હજાર બાકી છે.", marks=GAP, id="words-lakh-das-hazar"),
+    pytest.param("સવા લાખનું પેમેન્ટ ક્યારે આવશે?", marks=GAP, id="words-sava-lakh"),
+    # number words before a duration
+    pytest.param("ત્રીસ દિવસમાં આપજો.", marks=GAP, id="words-trees-divas"),
+    pytest.param("ત્રણ અઠવાડિયામાં કરી દેજો.", marks=GAP, id="words-tran-athvadiya"),
+    pytest.param("બે મહિનામાં કરી દેજો.", marks=GAP, id="words-be-mahina"),
+    # relative and open-ended dates
+    pytest.param("બાકીના આવતા મહિને આપજો, બરાબર ને?", marks=GAP, id="next-month"),
+    pytest.param("એક મહિના પછી આપજો.", marks=GAP, id="after-a-month"),
+    pytest.param("ઠીક હૈ, અગલે મહિને ભેજ દીજિએ.", marks=GAP, id="hindi-next-month"),
+    pytest.param("દિવાળી પછી આપી દેજો.", marks=GAP, id="after-diwali"),
+    pytest.param("ઉત્તરાયણ પર કરી દેજો.", marks=GAP, id="uttarayan"),
+    # the whole amount past promise_days (7)
+    pytest.param("તો 14 તારીખે ₹1,20,000, બરાબર ને?", marks=GAP, id="full-past-7-days"),
+    # discounts and waivers said other ways
+    pytest.param("તમે 10% ઓછા આપજો.", marks=GAP, id="percent-less"),
+    pytest.param("થોડું ઓછું કરી આપીશું.", marks=GAP, id="ochhu-kari"),
+    pytest.param("બાકીનું માફ કરી દઈશું.", marks=GAP, id="maaf"),
+    pytest.param("ઠીક હૈ, થોડા કમ કર દેંગે.", marks=GAP, id="hindi-kam-kar"),
+]
+
+MUST_PASS = [
+    "તો 50 હજાર શનિવારે, બરાબર ને?",           # a bill's amount, in words
+    "સારું, આવતા સોમવારે ચેક, બરાબર ને?",       # 9 November
+    "તો આવતા અઠવાડિયે થઈ જશે ને?",              # within the split limit
+    "બે દિવસમાં થઈ જશે ને?",
+    "હા જી, એક વાત કહું?",
+    "તો 10 તારીખે ₹1,20,000 RTGS, બરાબર ને?",  # the whole amount within 7 days
+    "તો 10 તારીખે ₹50,000 અને 18 તારીખે ₹70,000, બરાબર ને?",  # parts, the last within 15 days
+    "દિવાળીની શુભકામનાઓ.",
+]
+
+
+@pytest.mark.parametrize("line", MUST_BLOCK)
+def test_rule_breaking_lines_are_blocked(line):
+    assert check(line), line
+
+
+@pytest.mark.parametrize("line", MUST_PASS)
+def test_ordinary_lines_still_pass(line):
+    assert check(line) is None, line
