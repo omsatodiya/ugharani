@@ -49,7 +49,7 @@ def _spend() -> None:
 
     A guard so a public demo link can't drain the challenge credits.
     """
-    today = clock.today()
+    today = clock.real_today()
     if today not in _calls:
         _calls.clear()  # new day, new budget
         _calls[today] = 0

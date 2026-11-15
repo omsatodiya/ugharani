@@ -274,7 +274,7 @@ DEMO_USED_UP = "આજના ડેમો ફોન પૂરા થયા, ક�
 
 
 def demo_calls_left() -> int:
-    return max(0, int(os.getenv("LIVE_CALLS_PER_DAY", "10")) - _demo_calls.get(clock.today(), 0))
+    return max(0, int(os.getenv("LIVE_CALLS_PER_DAY", "10")) - _demo_calls.get(clock.real_today(), 0))
 
 
 def is_owner(key: str | None) -> bool:
@@ -293,7 +293,7 @@ def spend_demo_call(key: str | None) -> bool:
         return True
     if demo_calls_left() <= 0:
         return False
-    today = clock.today()
+    today = clock.real_today()
     for day in [d for d in _demo_calls if d != today]:
         del _demo_calls[day]
     _demo_calls[today] = _demo_calls.get(today, 0) + 1
