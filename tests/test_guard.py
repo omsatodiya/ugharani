@@ -68,8 +68,8 @@ MUST_BLOCK = [
     pytest.param("બાકીના આવતા મહિને આપજો, બરાબર ને?", id="next-month"),
     pytest.param("એક મહિના પછી આપજો.", id="after-a-month"),
     pytest.param("ઠીક હૈ, અગલે મહિને ભેજ દીજિએ.", id="hindi-next-month"),
-    pytest.param("દિવાળી પછી આપી દેજો.", marks=GAP, id="after-diwali"),
-    pytest.param("ઉત્તરાયણ પર કરી દેજો.", marks=GAP, id="uttarayan"),
+    pytest.param("દિવાળી પછી આપી દેજો.", id="after-diwali"),
+    pytest.param("ઉત્તરાયણ પર કરી દેજો.", id="uttarayan"),
     # the whole amount past promise_days (7)
     pytest.param("તો 14 તારીખે ₹1,20,000, બરાબર ને?", marks=GAP, id="full-past-7-days"),
     # discounts and waivers said other ways
