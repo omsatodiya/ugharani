@@ -234,6 +234,8 @@ def test_audit_failing_or_slow_finds_nothing(monkeypatch):
     for fake in (broken, slow):
         monkeypatch.setattr(llm, "generate_json", fake)
         assert asyncio.run(guard.audit(["બજારમાં તમારી શાખ જશે."])) == []
+        with pytest.raises((llm.LLMError, TimeoutError)):  # (an evaluation must see the outage)
+            asyncio.run(guard.audit(["બજારમાં તમારી શાખ જશે."], strict=True))
     assert asyncio.run(guard.audit([])) == []
 
 

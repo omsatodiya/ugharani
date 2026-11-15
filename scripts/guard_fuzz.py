@@ -6,8 +6,9 @@ on no bill, a date past the limits), some fine. Each goes through `guard.problem
 customer and date. Misses are saved to out/guard_fuzz.json for a person to read: Gemini's own label
 can be wrong too, so a miss is a candidate, not a verdict.
 
-Pass: every rule-breaking sentence is blocked, and at most 5% of the fine ones are (a false block
-only costs a hand-over to the owner).
+Pass (exit 0): every rule-breaking sentence is blocked, and at most 5% of the fine ones are (a false
+block only costs a hand-over to the owner). Fail: 1. Incomplete (a round failed, or no sentences of a
+kind to test): 2.
 
 Usage: uv run python scripts/guard_fuzz.py [--rounds 4]      (each round: ~75 sentences, 1 request)
        uv run python scripts/guard_fuzz.py --replay out/guard_fuzz.json   (the same sentences, free)
@@ -80,13 +81,18 @@ async def batch(n: int, seen: list[str]) -> list[dict]:
 
 async def main(rounds: int, replay: Path | None, audit_sample: int = 0) -> int:
     lines: list[dict] = json.loads(replay.read_text())["sentences"] if replay else []
+    seen, failed = {s["text"] for s in lines}, 0
     for r in range(0 if replay else rounds):
         try:
-            got = await batch(75, [s["text"] for s in lines])
+            got = await batch(75, list(seen))
         except (llm.LLMError, ValueError, KeyError) as e:
             print(f"round {r + 1}: {e}", file=sys.stderr)
+            failed += 1
             continue
-        lines += [s for s in got if s["text"] not in {x["text"] for x in lines}]
+        for s in got:  # (unique, within a round too)
+            if s["text"] not in seen:
+                seen.add(s["text"])
+                lines.append(s)
         print(f"round {r + 1}: {len(got)} sentences", file=sys.stderr)
 
     missed, false_blocks = [], []
@@ -111,7 +117,11 @@ async def main(rounds: int, replay: Path | None, audit_sample: int = 0) -> int:
     out.write_text(json.dumps({"today": TODAY.isoformat(), "sentences": lines, "missed": missed,
                                "false_blocks": false_blocks}, ensure_ascii=False, indent=1))
     print(f"\nsaved to {out}")
-    passed = not missed and len(false_blocks) <= 0.05 * max(ok, 1)
+    if failed or not bad or not ok:  # nothing (or not everything asked for) was tested
+        print(f"INCOMPLETE: {failed} of {0 if replay else rounds} rounds failed; "
+              f"{bad} rule-breaking and {ok} fine sentences to test")
+        return 2
+    passed = not missed and len(false_blocks) <= 0.05 * ok
     print("PASS" if passed else "FAIL")
     if audit_sample:
         await with_audit(lines, audit_sample)
@@ -126,15 +136,25 @@ async def with_audit(lines: list[dict], n: int) -> None:
     semantic = [s for s in lines if s["label"] == "bad" and s["rule"] in ("threat", "supply", "discount")]
     fine = [s for s in lines if s["label"] == "ok"]
     random.seed(1)
-    sample = random.sample(semantic, min(n // 2, len(semantic))) + random.sample(fine, min(n // 2, len(fine)))
+    sample = (random.sample(semantic, min(n // 2, len(semantic)))
+              + random.sample(fine, min(n - n // 2, len(fine))))
     random.shuffle(sample)
-    flagged, took = set(), []
+    flagged, took, checked = set(), [], []
     for i in range(0, len(sample), 15):
-        part = [s["text"] for s in sample[i:i + 15]]
+        part = sample[i:i + 15]
         t = time.monotonic()
-        flagged |= {f.split(": ", 1)[1] for f in await guard.audit(part)}
+        try:
+            found = await guard.audit([s["text"] for s in part], strict=True)
+        except (TimeoutError, llm.LLMError) as e:  # (unavailable: not "found nothing")
+            print(f"  audit unavailable for {len(part)} sentences: {type(e).__name__} {e}", file=sys.stderr)
+            continue
         took.append(time.monotonic() - t)
+        checked += part
+        flagged |= {f.split(": ", 1)[1] for f in found}
         await asyncio.sleep(4)  # free tier: stay under the per-minute limit
+    if len(checked) < len(sample):
+        print(f"\nafter-call check: only {len(checked)} of {len(sample)} sentences could be checked")
+    sample = checked
     bad = [s for s in sample if s["label"] == "bad"]
     words = {s["text"] for s in sample if guard.problem(s["text"], SETTINGS, CUSTOMER, [], TODAY)}
     print(f"\nafter-call check: {sum(s['text'] in flagged for s in bad)}/{len(bad)} rule-breaking found "
@@ -153,4 +173,6 @@ if __name__ == "__main__":
     parser.add_argument("--audit", type=int, default=0, metavar="N",
                         help="also try the after-call check on N sentences (one request per 15)")
     args = parser.parse_args()
+    if args.audit and args.audit < 2:
+        parser.error("--audit needs at least 2 (half rule-breaking, half fine)")
     sys.exit(asyncio.run(main(args.rounds, args.replay, args.audit)))

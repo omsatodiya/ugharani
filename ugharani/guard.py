@@ -194,9 +194,10 @@ promising anything, noting their complaint, sending a statement on WhatsApp, gre
 amounts are checked elsewhere: ignore them."""
 
 
-async def audit(lines: list[str]) -> list[str]:
+async def audit(lines: list[str], strict: bool = False) -> list[str]:
     """Her lines from one call, read by Gemini: what the owner should know about, or [] (none, or
-    no answer: the audit is a second opinion, its failure changes nothing)."""
+    no answer: the audit is a second opinion, its failure changes nothing). `strict`: raise when
+    there is no answer instead (an evaluation must not count an outage as "found nothing")."""
     if not lines:
         return []
     numbered = "\n".join(f"{n}. {line}" for n, line in enumerate(lines, 1))
@@ -205,6 +206,8 @@ async def audit(lines: list[str]) -> list[str]:
             llm.generate_json(AUDIT_PROMPT, [{"who": "customer", "text": numbered}], AUDIT_SCHEMA),
             timeout=AUDIT_TIMEOUT)
     except (TimeoutError, llm.LLMError) as e:
+        if strict:
+            raise
         log.warning("audit: no answer (%s)", type(e).__name__)
         return []
     found = []
