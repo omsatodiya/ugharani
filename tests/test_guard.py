@@ -79,6 +79,29 @@ MUST_BLOCK = [
     pytest.param("5% કેશ ડિસ્કાઉન્ટ મળશે.", id="cash-discount"),
     pytest.param("વ્યાજ માફ કરી દઈશું.", id="interest-waived"),
     pytest.param("ઓછા ભરશો તો ચાલશે.", id="ochha-bharsho"),
+    # interest, penalties, threats, supply, rates
+    pytest.param("લેટ પેમેન્ટ ચાર્જ લાગશે.", id="late-charge"),
+    pytest.param("નહીં તો પેનલ્ટી લાગશે.", id="penalty"),
+    pytest.param("₹1,25,000 થયા છે વ્યાજ સાથે.", id="with-interest"),
+    pytest.param("વરના કેસ કરના પડેગા.", id="hindi-case"),
+    pytest.param("હમારે વકીલ સે બાત કરની પડેગી.", id="lawyer-with-handover-words"),
+    pytest.param("કોર્ટ બાબતે શેઠ તમને ફોન કરશે.", id="court-handed-over"),
+    pytest.param("માલ બંધ કરી દઈશું.", id="stop-goods"),
+    pytest.param("હવે પછી ઓર્ડર નહીં મળે.", id="no-more-orders"),
+    pytest.param("પછી માલ નહીં મળે.", id="no-more-goods"),
+    pytest.param("તમારું નામ બ્લેકલિસ્ટમાં જશે.", id="blacklist"),
+    pytest.param("પોલીસ કમ્પ્લેઈન કરવી પડશે.", id="police"),
+    pytest.param("આ PVC પાઇપનો રેટ ₹120 છે.", id="rate"),
+    # amounts and dates
+    pytest.param("તો ₹30,000 હમણાં, બરાબર ને?", id="amount-nobody-said"),
+    pytest.param("26 તારીખે બાકીના ₹70,000, બરાબર ને?", id="rest-past-15-days"),
+    pytest.param("તો 2 તારીખે, બરાબર ને?", id="2nd-next-month"),
+    pytest.param("આવતા મહિનાની 5 તારીખે આપજો.", id="5th-of-next-month"),
+    pytest.param("ત્રણ મહિનાના હપ્તા કરી દઈએ.", id="three-months"),
+    pytest.param("પંદર દિવસ પછી આપજો.", id="after-15-days-whole"),
+    pytest.param("next month payment કરી દેજો.", id="english-next-month"),
+    pytest.param("જાન્યુઆરીમાં આપજો.", id="month-alone"),
+    pytest.param("ડિસેમ્બરમાં કરી દેજો.", id="next-month-by-name"),
 ]
 
 MUST_PASS = [
@@ -96,6 +119,21 @@ MUST_PASS = [
     "₹1,20,000 માંથી ₹50,000 તો આવી જશે ને?",
     "ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે.",           # handing over
     "ઓછું-વધતું હોય તો શેઠ તમને ફોન કરશે.",
+    "સાત દિવસ પછી આપી દેશો ને?",                    # 11 November
+    "કાલે RTGS કરી દેશો ને?",
+    "UTR નંબર હોય તો કહેજો ને.",
+    "હું તમને WhatsApp પર સ્ટેટમેન્ટ મોકલાવી દઉં છું.",
+    "એ માટે તમે મનીષભાઈ સાથે વાત કરી લેજો.",
+    "જી, તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?",
+    "ઠીક હૈ, તો શુક્રવાર કો ₹1,20,000, બરાબર?",
+    "હા જી, હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ છું, શેઠ વતી ફોન કર્યો છે.",
+    "ભાવનગરથી માલ ગયો હતો ને?",
+    "₹70,000 વાળું બિલ 1 નવેમ્બરનું છે.",
+    "ઑક્ટોબરનું બિલ બાકી છે.",
+    "આજે સાંજ સુધીમાં થઈ જશે?",
+    "બે-ત્રણ દિવસમાં થઈ જશે ને?",
+    "હું પછી ફોન કરું છું. આવજો.",
+    "વ્યાજ બાબતે શેઠ તમને ફોન કરશે.",                 # the customer asked; handed over
 ]
 
 

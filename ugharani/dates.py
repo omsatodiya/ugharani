@@ -155,7 +155,11 @@ def _durations(tokens: list[str], today: date) -> list[Span]:
             days = value
         else:
             continue
-        out.append(_bounded((today, today + timedelta(days=round(days))), tokens[end + 1:], today))
+        when = today + timedelta(days=round(days))
+        if _cue(tokens[end + 1:]) == "after":  # "7 દિવસ પછી": in everyday speech, on day 7
+            out.append((when, when))
+        else:
+            out.append(_bounded((today, when), tokens[end + 1:], today))
     return out
 
 
@@ -191,12 +195,27 @@ def _relative_span(tok: str, prev: str, nxt: str, today: date) -> Span | None:
     return None
 
 
+def _month_alone(tok: str, prev: str, today: date) -> Span | None:
+    """A month named without a day ("જાન્યુઆરીમાં"): all of it; this year's if this month or
+    recent, else next year's. ("5 ડિસેમ્બર", with the day, is read by _calendar_dates.)"""
+    if prev[:1].isdigit():
+        return None
+    month = next((i for i, name in enumerate(MONTH_NAMES, 1) if len(name) > 2 and tok.startswith(name)), None)
+    if month is None:
+        return None
+    first = date(today.year, month, 1)
+    if first < today.replace(day=1) - timedelta(days=180):
+        first = first.replace(year=today.year + 1)
+    end = _month_end(first)
+    return (first if end < today else max(first, today), end)  # (a past month: a bill's)
+
+
 def _relative(tokens: list[str], today: date) -> list[Span]:
     out = []
     for i, tok in enumerate(tokens):
         prev = tokens[i - 1] if i else ""
         nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
-        if span := _relative_span(tok, prev, nxt, today):
+        if span := _relative_span(tok, prev, nxt, today) or _month_alone(tok, prev, today):
             out.append(_bounded(span, tokens[i + 1:], today))
     return out
 
