@@ -70,7 +70,11 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     have = {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}
     for column in ("flags", "owner_action", "payment_mode", "audit"):  # (older databases)
         if column not in have:
-            conn.execute(f"ALTER TABLE calls ADD COLUMN {column} TEXT")
+            try:
+                conn.execute(f"ALTER TABLE calls ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError as e:  # another request added it a moment ago
+                if "duplicate column" not in str(e):
+                    raise
     return conn
 
 

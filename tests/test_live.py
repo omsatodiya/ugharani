@@ -1073,7 +1073,8 @@ def test_the_after_call_check_tells_the_owner_what_she_said(phone, monkeypatch):
     call = _saved(client, call_id, "outcome")
     assert call["audit"] == ["supply: તમારી એક પણ લાઈન રવાના નહીં થાય."]
     assert call["flags"] == []  # (it was said: not something the checker stopped)
-    assert GREETING not in asked[0] and INTRO not in asked[0]  # fixed lines aren't sent
+    assert GREETING not in asked[0] and "હા નમસ્તે." not in asked[0]  # fixed lines aren't sent,
+    assert "હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી." not in asked[0]  # sentence by sentence either
 
 
 def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monkeypatch):
