@@ -97,11 +97,24 @@ The prompt states them as dates ("up to 12 નવેમ્બર"), not as rules
 
 A prompt can still slip, so `ugharani/guard.py` checks every sentence **in code** before it is
 synthesised. It is never said if it:
-- brings up a discount, interest or penalty, legal action, stopping supply, or a rate, unless it
-  is handing that topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે")
+- brings up a discount, interest or penalty, or a rate, unless it is handing that topic over
+  ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે"); also said without the word: a percentage ("2 ટકા",
+  but not "સો ટકા", "definitely"), "ઓછું કરી આપીશું", "માફ કરી દઈશું" (not "માફ કરજો", "sorry")
+- threatens legal action or stopping supply ("કોર્ટ", "વકીલ", "માલ બંધ", "ઓર્ડર નહીં મળે",
+  "બ્લેકલિસ્ટ"): never, handed over or not
 - names an amount that is not the balance, an open bill, something the customer said
-  ("60 હજાર", "દોઢ લાખ" too) or what is left after it
-- names a date past the 15-day limit ("25 તારીખે", "2 ડિસેમ્બરે", "30 દિવસમાં")
+  ("60 હજાર", "દોઢ લાખ" too) or what is left after it; her own amounts are read in words too
+  ("75 હજાર", "એક લાખ દસ હજાર", "સવા લાખ")
+- names a date whose latest day is past the 15-day limit, or a date past the 7-day limit for the
+  whole amount (only a part payment may run past 7 days)
+
+Dates are read by `ugharani/dates.py` as spans (earliest, latest): "15 તારીખે", "5 ડિસેમ્બરે",
+weekdays, "કાલે", "પરમ દિવસે", "આવતા અઠવાડિયે" (next Monday to Sunday), "આવતા મહિને" (all of
+next month), "જાન્યુઆરીમાં", "ત્રીસ દિવસમાં", "ત્રણ અઠવાડિયામાં", Hindi "અગલે હફ્તે"; "X પછી"
+has no end ("દિવાળી પછી", "15 તારીખ પછી"), except a duration ("7 દિવસ પછી" is day 7); "X
+પહેલાં" / "X સુધી" end at X. Festivals (દિવાળી, લાભ પાંચમ, દેવ દિવાળી, ઉત્તરાયણ, હોળી, …) come
+from a table of dates for 2026-27 that must be extended each year; a festival with no date ahead
+counts as open-ended, so it is never let through.
 
 In its place she says "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે." (a bundled clip), the
 rest of that reply is dropped, and the reason is saved on the call (`calls.flags`) for the owner.
