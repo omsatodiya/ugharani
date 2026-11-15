@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# binary assets
+*.wav binary
+*.mp3 binary
+*.png binary
+*.jpg binary
+*.ico binary
