@@ -61,13 +61,13 @@ MUST_BLOCK = [
     pytest.param("એક લાખ દસ હજાર બાકી છે.", id="words-lakh-das-hazar"),
     pytest.param("સવા લાખનું પેમેન્ટ ક્યારે આવશે?", id="words-sava-lakh"),
     # number words before a duration
-    pytest.param("ત્રીસ દિવસમાં આપજો.", marks=GAP, id="words-trees-divas"),
-    pytest.param("ત્રણ અઠવાડિયામાં કરી દેજો.", marks=GAP, id="words-tran-athvadiya"),
-    pytest.param("બે મહિનામાં કરી દેજો.", marks=GAP, id="words-be-mahina"),
+    pytest.param("ત્રીસ દિવસમાં આપજો.", id="words-trees-divas"),
+    pytest.param("ત્રણ અઠવાડિયામાં કરી દેજો.", id="words-tran-athvadiya"),
+    pytest.param("બે મહિનામાં કરી દેજો.", id="words-be-mahina"),
     # relative and open-ended dates
-    pytest.param("બાકીના આવતા મહિને આપજો, બરાબર ને?", marks=GAP, id="next-month"),
-    pytest.param("એક મહિના પછી આપજો.", marks=GAP, id="after-a-month"),
-    pytest.param("ઠીક હૈ, અગલે મહિને ભેજ દીજિએ.", marks=GAP, id="hindi-next-month"),
+    pytest.param("બાકીના આવતા મહિને આપજો, બરાબર ને?", id="next-month"),
+    pytest.param("એક મહિના પછી આપજો.", id="after-a-month"),
+    pytest.param("ઠીક હૈ, અગલે મહિને ભેજ દીજિએ.", id="hindi-next-month"),
     pytest.param("દિવાળી પછી આપી દેજો.", marks=GAP, id="after-diwali"),
     pytest.param("ઉત્તરાયણ પર કરી દેજો.", marks=GAP, id="uttarayan"),
     # the whole amount past promise_days (7)

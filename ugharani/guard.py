@@ -9,8 +9,7 @@ owner is told why.
 import re
 from datetime import date, timedelta
 
-from ugharani import extract
-from ugharani.reminders import MONTHS
+from ugharani import dates, extract
 
 # Things she never brings up (the owner decides them, or they're never said at all). Matched on
 # words, so "ભાવ" in "ભાવનગર" doesn't count.
@@ -25,9 +24,6 @@ NEVER = {
 HANDING_OVER = re.compile(r"ફોન કરશે|ફોન કરી લેશે|વાત કરી લેજો|વાત કરશે|વાત કરી લેશે|કૉલ કરશે|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
 
 AMOUNT = re.compile(r"₹\s?([\d,]+)|([\d,]{4,})\s*(?:રૂપિયા|રૂ\.?|/-)")
-DAY_OF_MONTH = re.compile(r"(\d{1,2})\s*(?:તારીખ|તા\.)")
-DAY_MONTH = re.compile(r"(\d{1,2})\s*(" + "|".join(m[:3] for m in MONTHS) + r")")
-IN_DAYS = re.compile(r"(\d{1,2})\s*(?:દિવસ|दिन|દિન)")
 
 
 SUFFIXES = ("", "માં", "મા", "નો", "ના", "ની", "નું", "ને", "થી", "નુ", "વાળા", "વાળું", "ે", "ો", "s")
@@ -59,33 +55,6 @@ def _numbers(text: str) -> set[int]:
     return {round(value) for value, _, _ in extract._number_groups(tokens)}
 
 
-def _dates(text: str, today: date) -> list[date]:
-    """Dates the sentence names: "25 તારીખે" (this month, or next if past), "5 ડિસેમ્બરે", "20 દિવસમાં"."""
-    out = []
-    for m in DAY_MONTH.finditer(text):
-        month = next(i for i, name in enumerate(MONTHS, 1) if name.startswith(m.group(2)))
-        try:
-            when = date(today.year, month, int(m.group(1)))
-        except ValueError:
-            continue
-        if when < today - timedelta(days=180):  # "5 જાન્યુઆરી" said in November: next year
-            when = when.replace(year=today.year + 1)
-        out.append(when)  # (a recent past date is a bill's date, never past the limit)
-    if not out:
-        for m in DAY_OF_MONTH.finditer(text):
-            day = int(m.group(1))
-            year, month = today.year, today.month
-            if day < today.day:
-                year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-            try:
-                out.append(date(year, month, day))
-            except ValueError:
-                pass
-    for m in IN_DAYS.finditer(text):
-        out.append(today + timedelta(days=int(m.group(1))))
-    return out
-
-
 def problem(text: str, settings: dict, customer: dict, history: list[dict], today: date) -> str | None:
     """Why `text` must not be said (for the owner's notes), or None if it's fine."""
     words = re.findall(r"[\w઀-૿]+", text.lower())
@@ -106,9 +75,9 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
             return f"she was about to say an amount that is on no bill: {text}"
 
     latest = today + timedelta(days=settings["split_days"])
-    for when in _dates(text, today):
-        if when > latest:
-            return f"she was about to agree to {when.isoformat()}, past the {settings['split_days']}-day limit: {text}"
+    for _, until in dates.spans(text, today):
+        if until > latest:
+            return f"she was about to agree to {until.isoformat()}, past the {settings['split_days']}-day limit: {text}"
     return None
 
 
