@@ -1,12 +1,12 @@
 """API tests with Prisma and Timbre mocked out, so they cost no Gnani credits."""
 
 import json
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ugharani import followup, gnani, main
+from ugharani import clock, followup, gnani, main
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def test_complete_entry_is_read_back_then_saved_on_confirm(client, monkeypatch):
 
     draft = body["draft"]
     assert (draft["kind"], draft["buyer"], draft["amount"], body["missing"]) == ("credit", "રમેશભાઈ", 240000, [])
-    assert draft["due_date"] == (date.today() + timedelta(days=60)).isoformat()
+    assert draft["due_date"] == (clock.today() + timedelta(days=60)).isoformat()
     assert body["say"] == "રમેશભાઈને ₹2,40,000નો માલ, 60 દિવસની મુદત. બરાબર?"
     assert client.get(body["audio"]).content == ("RIFF" + body["say"]).encode()
     assert client.get("/entries").json() == []  # nothing saved until the trader confirms
@@ -181,7 +181,7 @@ def test_dashboard_settings_customers_and_queue(client):
     assert client.put("/settings", json={"tone": "angry"}).status_code == 422
 
     client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
-                                  "due_date": date.today().isoformat()})
+                                  "due_date": clock.today().isoformat()})
     c = client.put("/customers/રામેશભાઈ", json={"phone": "9800000001", "deals_with": "મનીષભાઈ", "firm": "શ્રીજી હાર્ડવેર"}).json()
     assert (c["name"], c["phone"], c["firm"], c["balance"]) == ("રમેશભાઈ", "9800000001", "શ્રીજી હાર્ડવેર", 100000)  # matched spelling
 
@@ -199,12 +199,12 @@ def test_demo_seed_includes_contacts(tmp_path):
     by_name = {c["name"]: c for c in followup.customers(conn)}
     assert (by_name["રમેશભાઈ"]["phone"], by_name["રમેશભાઈ"]["firm"], by_name["રમેશભાઈ"]["city"]) ==         ("9800000001", "શ્રીજી હાર્ડવેર", "જેતપુર")
     assert followup.get_settings(conn)["business_place"] == "ગોંડલ, રાજકોટ"
-    assert [q["customer"] for q in followup.to_call(conn, date.today())] == ["રમેશભાઈ"]
+    assert [q["customer"] for q in followup.to_call(conn, clock.today())] == ["રમેશભાઈ"]
 
 
 def test_call_rings_the_customers_phone_then_ends(client):
     client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
-                                  "due_date": date.today().isoformat()})
+                                  "due_date": clock.today().isoformat()})
     assert client.get("/phone/incoming", params={"customer": "રમેશભાઈ"}).json()["call"] is None
 
     call = client.post("/calls", json={"customer": "રામેશભાઈ"}).json()
@@ -224,9 +224,9 @@ def test_call_rings_the_customers_phone_then_ends(client):
 
 def test_auto_run_rings_everyone_due_once(client):
     client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
-                                  "due_date": date.today().isoformat()})
+                                  "due_date": clock.today().isoformat()})
     client.post("/entries", json={"kind": "credit", "buyer": "કાંતાબેન", "amount": 50000,
-                                  "due_date": (date.today() + timedelta(days=9)).isoformat()})
+                                  "due_date": (clock.today() + timedelta(days=9)).isoformat()})
     rung = client.post("/calls/run", params={"anytime": True}).json()
     assert [(c["customer"], c["trigger"]) for c in rung] == [("રમેશભાઈ", "auto")]
     assert client.post("/calls/run", params={"anytime": True}).json() == []  # already ringing
@@ -241,7 +241,7 @@ def test_pages_are_revalidated_but_clips_are_not(client):
 
 def test_auto_calls_wait_for_the_call_hours(client, monkeypatch):
     client.post("/entries", json={"kind": "credit", "buyer": "રમેશભાઈ", "amount": 100000,
-                                  "due_date": date.today().isoformat()})
+                                  "due_date": clock.today().isoformat()})
     monkeypatch.setattr(followup, "calling_time", lambda rules, now: False)  # e.g. 2 pm, lunch
     assert client.post("/calls/run").json() == []
     assert client.post("/calls", json={"customer": "રમેશભાઈ"}).json()["status"] == "ringing"  # "call now" still works

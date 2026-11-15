@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from ugharani import clock
+
 # A number (ASCII or Gujarati digits, Indian/Western commas), ₹, or a run of non-separators.
 _TOKEN = re.compile(r"\d[\d,]*(?:\.\d+)?|₹|[^\s\d,.!?।:;\"'₹]+")
 
@@ -198,7 +200,7 @@ def _is_payment(tokens: list[str]) -> bool:
 
 
 def parse(transcript: str, today: date | None = None) -> ParsedEntry:
-    today = today or date.today()
+    today = today or clock.today()
     tokens = [t.lower() for t in _TOKEN.findall(transcript)]
 
     due_days = None

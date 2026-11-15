@@ -24,3 +24,6 @@ __pycache__/
 
 # tool state
 .serena/
+
+# macOS
+.DS_Store

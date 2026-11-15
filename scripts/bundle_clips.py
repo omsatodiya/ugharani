@@ -12,18 +12,17 @@ import asyncio
 import shutil
 import sys
 import tempfile
-from datetime import date
 from pathlib import Path
 
-from ugharani import agent, db, followup, guard, live, reminders, speech
+from ugharani import agent, clock, db, followup, guard, live, reminders, speech
 from ugharani.seed import seed
 
 
 def fixed_sentences() -> list[str]:
     with tempfile.TemporaryDirectory() as tmp:
         conn = db.connect(str(Path(tmp) / "seed.db"))
-        seed(conn, today=date.today())
-        summary = reminders.summary_text(reminders.due_items(conn, date.today()))
+        seed(conn, today=clock.today())
+        summary = reminders.summary_text(reminders.due_items(conn, clock.today()))
         rules = followup.get_settings(conn)
         # how each sample customer's call starts: "હેલો રમેશભાઈ?", then the intro (after a yes, or not)
         openings = [agent.greeting(c) for c in followup.customers(conn)]

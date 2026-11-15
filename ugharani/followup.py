@@ -9,7 +9,7 @@ import json
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
-from ugharani import reminders
+from ugharani import clock, reminders
 
 # Every setting is stored as text; TYPES says how to read it back.
 DEFAULTS = {
@@ -159,7 +159,7 @@ def _call(row: sqlite3.Row | None) -> dict | None:
 def start_call(conn: sqlite3.Connection, customer: str, amount_due: int, trigger: str = "manual",
                when: datetime | None = None) -> int:
     # Local time, not SQLite's UTC default: "called today" must mean the trader's today.
-    when = when or datetime.now()
+    when = when or clock.now()
     cur = conn.execute("INSERT INTO calls (customer, trigger, amount_due, created_at) VALUES (?, ?, ?, ?)",
                        (customer, trigger, amount_due, when.isoformat(timespec="seconds")))
     conn.commit()
@@ -183,7 +183,7 @@ def list_calls(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
 def set_status(conn: sqlite3.Connection, call_id: int, status: str) -> None:
     ended = status in ("completed", "missed", "declined", "failed")
     conn.execute("UPDATE calls SET status = ?, ended_at = CASE WHEN ? THEN ? ELSE ended_at END WHERE id = ?",
-                 (status, ended, datetime.now().isoformat(timespec="seconds"), call_id))
+                 (status, ended, clock.now().isoformat(timespec="seconds"), call_id))
     conn.commit()
 
 
@@ -194,7 +194,7 @@ def end_live_call(conn: sqlite3.Connection, call_id: int, transcript: list[dict]
     conn.execute("UPDATE calls SET status = ?, transcript = ?, flags = ?, ended_at = ? "
                  "WHERE id = ? AND status = 'in_progress'",
                  ("completed" if ok else "failed", json.dumps(transcript, ensure_ascii=False),
-                  json.dumps(flags or [], ensure_ascii=False), datetime.now().isoformat(timespec="seconds"), call_id))
+                  json.dumps(flags or [], ensure_ascii=False), clock.now().isoformat(timespec="seconds"), call_id))
     conn.commit()
 
 
@@ -211,7 +211,7 @@ def finish_call(conn: sqlite3.Connection, call_id: int, *, transcript: list[dict
                ended_at = COALESCE(ended_at, ?) WHERE id = ?""",
         (outcome, summary, json.dumps(transcript, ensure_ascii=False), promised_amount,
          promised_date.isoformat() if promised_date else None, recording, owner_action, payment_mode,
-         datetime.now().isoformat(timespec="seconds"), call_id),
+         clock.now().isoformat(timespec="seconds"), call_id),
     )
     conn.commit()
 
