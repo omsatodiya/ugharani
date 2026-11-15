@@ -102,6 +102,28 @@ MUST_BLOCK = [
     pytest.param("next month payment કરી દેજો.", id="english-next-month"),
     pytest.param("જાન્યુઆરીમાં આપજો.", id="month-alone"),
     pytest.param("ડિસેમ્બરમાં કરી દેજો.", id="next-month-by-name"),
+    # found by scripts/guard_fuzz.py
+    pytest.param("બાવીસ તારીખ નક્કી રાખો ફાઇનલ પેમેન્ટ માટે.", id="fuzz-day-in-words"),
+    pytest.param("સંપૂર્ણ એક લાખ વીસ હજાર રૂપિયા તેર તારીખે ક્લિયર કરી આપો.", id="fuzz-whole-13th-words"),
+    pytest.param("અઠ્ઠાવન હજાર રૂપિયા પેન્ડિંગ બતાવે છે.", id="fuzz-58-hazar"),
+    pytest.param("વાલ્વની પ્રાઇસ લિસ્ટ પ્રમાણે અઢાર રૂપિયા એક નંગ પડે.", id="fuzz-price-per-piece"),
+    pytest.param("માર્કેટમાં તમારી શાખ બગાડવી પડશે.", id="fuzz-spoil-name"),
+    pytest.param("ટ્રક અહિયાં જ રોકી દીધી છે.", id="fuzz-truck-stopped"),
+    pytest.param("નવો ઓર્ડર ફેક્ટરીમાંથી ડિસ્પેચ નહીં થાય.", id="fuzz-no-dispatch"),
+    pytest.param("જૂનું બિલ ક્લિયર નહીં થાય ત્યાં સુધી નવા ઓર્ડર પર હોલ્ડ છે.", id="fuzz-orders-on-hold"),
+    pytest.param("સમય પૂરો થશે એટલે લેટ ફી લાગુ પડી જશે.", id="fuzz-late-fee"),
+    pytest.param("પછી ગમે ત્યારે અનુકૂળતા મુજબ મોકલાવી દેજો.", id="fuzz-whenever"),
+    pytest.param("જૂના સંબંધોના ખાતામાં દસ ટકા કાપીને બાકી મોકલી દો.", id="fuzz-cut-ten-percent"),
+    pytest.param("તમારું ટોટલ 1,50,000 નું બિલ બાકી છે.", id="fuzz-bare-digits"),
+    pytest.param("અમારા ખાતામાં 90,000 નું પેન્ડિંગ બતાવે છે.", id="fuzz-bare-digits-2"),
+    pytest.param("તમને 1,20,000 ની જગ્યાએ 1,15,000 કરી આપું?", id="fuzz-lower-total"),
+    pytest.param("70,000 વાળા બિલમાં રાઉન્ડ ઓફ કરી આપીશું.", id="fuzz-round-off"),
+    pytest.param("થોડું ઓછું ચૂકવશો તો પણ ચાલશે.", id="fuzz-pay-less"),
+    pytest.param("કાયદાકીય પગલાં લેવા સિવાય કોઈ રસ્તો નહીં રહે.", id="fuzz-legal-steps"),
+    pytest.param("પોલિસ સ્ટેશનમાં ફરિયાદ કરવી પડશે.", id="fuzz-police-spelling"),
+    pytest.param("ટ્રેલર પેમેન્ટ આવે પછી જ રવાના થશે.", id="fuzz-after-payment-only"),
+    pytest.param("ફેક્ટરીથી નવો ડિસ્પેચ અટકાવી દેવામાં આવશે.", id="fuzz-dispatch-held"),
+    pytest.param("તમારું સપ્લાય કનેક્શન કાપવું પડશે.", id="fuzz-supply-cut"),
 ]
 
 MUST_PASS = [
@@ -134,6 +156,15 @@ MUST_PASS = [
     "બે-ત્રણ દિવસમાં થઈ જશે ને?",
     "હું પછી ફોન કરું છું. આવજો.",
     "વ્યાજ બાબતે શેઠ તમને ફોન કરશે.",                 # the customer asked; handed over
+    "તમારી ફરિયાદ નોંધી લીધી છે, મનીષભાઈ ફોન કરશે.",   # a dispute, noted
+    "20 નંગ માલ ડેમેજ હતો એ બાબતે મનીષભાઈ ફોન કરશે.",
+    "માલ મળ્યો નહીં હોય તો મનીષભાઈ સાથે વાત કરી લેજો.",
+    "અગિયાર નવેમ્બરે પેમેન્ટ કરી દેશો ને?",
+    "ભાવ બાબતે શેઠ જ નક્કી કરે, એ તમને ફોન કરશે.",
+    "જો 9 નવેમ્બરે આખી રકમ ભરી દેશો તો બહુ સારું રહેશે.",   # "રકમ" is not "કમ"
+    "UTR 4528 હોય તો કહેજો ને.",                              # digits that aren't money
+    "તમે 12 તારીખે 50,000 અને 19 નવેમ્બરે 70,000 આપશો તો અમારી પોલિસીમાં આવી જશે.",  # policy, not police
+    "ભાવ બાબતે મારી પાસે માહિતી નથી, શેઠ આવે એટલે વાત કરાવું.",
 ]
 
 

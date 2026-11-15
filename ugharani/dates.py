@@ -34,7 +34,7 @@ MONTH = ("મહિન", "મહીન", "month", "mahin")
 
 AFTER = {"પછી", "પછીથી", "બાદ", "બાદમાં", "after", "pachhi"}      # "દિવાળી પછી": no end
 BEFORE = {"પહેલાં", "પહેલા", "પેલા", "પહેલે", "before"}             # "દિવાળી પહેલાં": by then
-BY = {"સુધી", "સુધીમાં", "તક", "until", "by"}                       # "15 તારીખ સુધી": by then
+BY = {"સુધી", "સુધીમાં", "તક", "અંદર", "અંદરથી", "until", "by"}   # "15 તારીખ સુધી": by then
 CONNECTORS = {"કે", "ના", "ની", "નો"}                                 # "દિવાળી કે બાદ"
 OPEN = date.max  # "after X": no latest day
 
@@ -63,6 +63,7 @@ FESTIVAL_WORDS = {  # stems; the word may be inflected ("દિવાળીએ",
 FESTIVAL_AFTER_WORD = {  # two words: (first, stem of the second)
     ("દેવ", "દિવાળી"): "dev_diwali", ("લાભ", "પાંચમ"): "labh_pancham",
     ("બેસતું", "વર્ષ"): "new_year", ("બેસતા", "વર્ષ"): "new_year", ("નવા", "વર્ષ"): "new_year",
+    ("નવું", "વર્ષ"): "new_year", ("નવી", "સાલ"): "new_year", ("બેસતી", "સાલ"): "new_year",
 }
 DATE_SUFFIXES = ("એ", "ે", "માં", "મા")  # "દિવાળીએ", "હોળીમાં" ("દિવાળીના દિવસે" below)
 
@@ -74,6 +75,19 @@ def _plain(text: str) -> str:
 MONTH_NAMES = [_plain(m) for m in MONTHS]
 DAY_OF_MONTH = re.compile(r"(\d{1,2})\s*(?:તારીખ|તા\.|tarikh)")
 DAY_MONTH = re.compile(r"(\d{1,2})\s*(" + "|".join(m[:3] for m in MONTH_NAMES) + r")")
+
+
+DAY_WORD = re.compile(r"([઀-૿]+)(?=\s*(?:તારીખ|" + "|".join(m[:3] for m in MONTH_NAMES) + r"))")
+# Said with no date at all: "ગમે ત્યારે આપજો", "નિરાંતે", "તમારી અનુકૂળતા મુજબ": no end
+WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|कभी\s*भी")
+
+
+def _days_in_digits(text: str) -> str:
+    """"અગિયાર નવેમ્બર", "બાર તારીખે" -> "11 નવેમ્બર", "12 તારીખે", for the patterns below."""
+    def digits(m: re.Match) -> str:
+        value = extract.NUMBER_WORDS.get(m.group(1))
+        return str(value) if isinstance(value, int) and 1 <= value <= 31 else m.group(1)
+    return DAY_WORD.sub(digits, text)
 
 
 def _month_end(day: date) -> date:
@@ -118,11 +132,22 @@ def _after_match(text: str, m: re.Match) -> list[str]:
     return words[1:] if rest[:1].strip() and words else words
 
 
+# Words that may come between a date and its "પછી": "દિવાળી કે બાદ", "નવી સાલ બેસી જાય પછી"
+BETWEEN = CONNECTORS | {"બેસી", "બેસે", "જાય", "જશે", "થાય", "થઈ", "પતે", "પતી", "પૂરી", "પૂરું", "આવે", "આવી"}
+
+
 def _cue(following: list[str]) -> str | None:
     """The word that bounds a date mention ("પછી", "પહેલાં", "સુધી"), if one comes next."""
-    words = following[1:2] if following[:1] and following[0] in CONNECTORS else following[:1]
-    word = words[0] if words else ""
-    return "after" if word in AFTER else "before" if word in BEFORE else "by" if word in BY else None
+    for word in following[:4]:
+        if word in AFTER:
+            return "after"
+        if word in BEFORE:
+            return "before"
+        if word in BY:
+            return "by"
+        if word not in BETWEEN:
+            return None
+    return None
 
 
 def _bounded(span: Span, following: list[str], today: date) -> Span:
@@ -257,7 +282,7 @@ def _festivals(tokens: list[str], today: date) -> list[Span]:
 
 def spans(text: str, today: date) -> list[Span]:
     """Every date the text names, as (earliest, latest)."""
-    plain = _plain(text)
+    plain = _days_in_digits(_plain(text))
     tokens = _tokens(plain)
     return (_calendar_dates(plain, today) + _durations(tokens, today) + _relative(tokens, today)
-            + _festivals(tokens, today))
+            + _festivals(tokens, today) + [(today, OPEN)] * bool(WHENEVER.search(plain)))
