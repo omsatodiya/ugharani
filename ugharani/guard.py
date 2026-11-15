@@ -74,11 +74,31 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
         if amount not in known:
             return f"she was about to say an amount that is on no bill: {text}"
 
-    latest = today + timedelta(days=settings["split_days"])
-    for _, until in dates.spans(text, today):
-        if until > latest:
+    # Dates: the last part by split_days; past promise_days only for a part, never the whole amount.
+    split_by = today + timedelta(days=settings["split_days"])
+    promise_by = today + timedelta(days=settings["promise_days"])
+    whole = balance in _amounts(text)
+    in_parts = _in_parts(text, history, balance)
+    for start, until in dates.spans(text, today):
+        if until > split_by:
             return f"she was about to agree to {until.isoformat()}, past the {settings['split_days']}-day limit: {text}"
+        # (a range like "આવતા અઠવાડિયે" that starts in time can still be narrowed to a day in it)
+        if start > promise_by and (whole or not in_parts):
+            return (f"she was about to agree to the whole amount on {start.isoformat()}, past the "
+                    f"{settings['promise_days']}-day limit: {text}")
     return None
+
+
+REST = ("બાકીના", "બાકીનું", "બાકીનો", "બાકીની", "અડધા", "અડધું", "હપ્તા", "હપ્તે", "પહેલો હપ્તો")
+
+
+def _in_parts(text: str, history: list[dict], balance: int) -> bool:
+    """Is a part payment being talked about: an amount below the balance, or "the rest"?"""
+    for line in [text, *(h["text"] for h in history)]:
+        money = _amounts(line) | {n for n in _numbers(line) if n >= 1_000}  # (not "18 તારીખે")
+        if any(0 < n < balance for n in money) or any(w in line for w in REST):
+            return True
+    return False
 
 
 def instead(settings: dict, customer: dict) -> str:

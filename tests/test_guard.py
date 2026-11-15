@@ -43,7 +43,8 @@ def test_amounts_must_be_on_a_bill_or_said_by_the_customer():
 
 
 def test_no_date_past_the_owners_limit():
-    assert check("તો 18 તારીખે, બરાબર ને?") is None  # 14 days: a split may run this far
+    assert check("તો 18 તારીખે, બરાબર ને?", said=["10 તારીખે 50 હજાર આપીશ"]) is None  # a split's last part
+    assert check("તો 18 તારીખે બાકીના, બરાબર ને?") is None
     assert check("તો 25 તારીખે, બરાબર ને?")  # 21 days
     assert check("તો 2 ડિસેમ્બરે બાકીના, બરાબર ને?")
     assert check("તો 3 તારીખે, બરાબર ને?")  # the 3rd of next month
@@ -71,7 +72,7 @@ MUST_BLOCK = [
     pytest.param("દિવાળી પછી આપી દેજો.", id="after-diwali"),
     pytest.param("ઉત્તરાયણ પર કરી દેજો.", id="uttarayan"),
     # the whole amount past promise_days (7)
-    pytest.param("તો 14 તારીખે ₹1,20,000, બરાબર ને?", marks=GAP, id="full-past-7-days"),
+    pytest.param("તો 14 તારીખે ₹1,20,000, બરાબર ને?", id="full-past-7-days"),
     # discounts and waivers said other ways
     pytest.param("તમે 10% ઓછા આપજો.", marks=GAP, id="percent-less"),
     pytest.param("થોડું ઓછું કરી આપીશું.", marks=GAP, id="ochhu-kari"),
@@ -99,3 +100,10 @@ def test_rule_breaking_lines_are_blocked(line):
 @pytest.mark.parametrize("line", MUST_PASS)
 def test_ordinary_lines_still_pass(line):
     assert check(line) is None, line
+
+
+def test_the_whole_amount_only_within_promise_days():
+    assert check("તો 18 તારીખે, બરાબર ને?")  # 14 days, no part payment: past the 7 days
+    assert check("તો 11 તારીખે, બરાબર ને?") is None  # 7 days
+    assert check("તો 14 તારીખે ₹1,20,000, બરાબર ને?", said=["10 તારીખે 50 હજાર આપીશ"])  # whole, named
+    assert check("તો આવતા અઠવાડિયે થઈ જશે ને?") is None  # starts Monday the 9th: can be narrowed
