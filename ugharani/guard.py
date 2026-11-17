@@ -49,7 +49,12 @@ def _amounts(text: str) -> set[int]:
     return found
 
 
-DAY_WORDS = ("તારીખ", "તા", "tarikh", "तारीख", *(m[:3] for m in dates.MONTH_NAMES))
+DAY_WORDS = ("તારીખ", "tarikh", "तारीख", *dates.MONTH_NAMES)  # (and "તા." alone)
+
+
+def _is_day_word(token: str) -> bool:
+    token = token.replace("ઑ", "ઓ")  # ("ઑક્ટોબર", "ઓક્ટોબર")
+    return token == "તા" or token.startswith(DAY_WORDS)
 
 
 def _numbers(text: str) -> set[int]:
@@ -57,7 +62,7 @@ def _numbers(text: str) -> set[int]:
     month ("25 તારીખે", "18 નવેમ્બરે")."""
     tokens = [t.lower() for t in extract._TOKEN.findall(text)]
     return {round(value) for value, _, end in extract._number_groups(tokens)
-            if not (end < len(tokens) and tokens[end].startswith(DAY_WORDS))}
+            if not (end < len(tokens) and _is_day_word(tokens[end]))}
 
 
 def problem(text: str, settings: dict, customer: dict, history: list[dict], today: date) -> str | None:

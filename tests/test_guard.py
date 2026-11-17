@@ -283,4 +283,6 @@ def test_a_date_question_does_not_cover_an_open_date_agreed_beside_it():
 
 
 def test_a_day_of_the_month_is_no_amount_said():
-    assert check("તો ₹1,19,975 25 તારીખે, બરાબર ને?", said=["25 તારીખે આપીશ"])  # (balance - 25)
+    assert check("તો ₹1,19,990 10 તારીખે, બરાબર ને?", said=["10 તારીખે આપીશ"])  # (balance - 10)
+    assert check("તો ₹1,19,990 10 તારીખે, બરાબર ને?", said=["10 ઑક્ટોબરનું બિલ છે"])
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["60 હજાર તાત્કાલિક આપું"]) is None  # not "તા."

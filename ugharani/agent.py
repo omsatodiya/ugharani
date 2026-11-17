@@ -308,7 +308,8 @@ def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> 
         when = date.fromisoformat(out["promised_date"])
         # (not "દિવાળી પછી": an open end would let any later date through)
         spans = [span for line in lines for span in dates.spans(line, today) if span[1] != dates.OPEN]
-        said_now = when == today and any(w in line for line in lines for w in NOW)
+        words = {w for line in lines for w in re.findall(r"[\w઀-૿ऀ-ॿ]+", line)}  # (whole words: not "આજકાલ")
+        said_now = when == today and bool(words & set(NOW))
         if not said_now and not any(start <= when <= until for start, until in spans):
             checks.append(f"નોંધ તપાસો: વાયદાની તારીખ {spoken_date(when)} ફોનમાં સંભળાઈ નથી.")
             out["promised_date"] = None

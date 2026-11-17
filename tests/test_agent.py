@@ -125,6 +125,9 @@ def test_notes_dont_take_a_day_or_an_open_end_as_the_promise(settings, monkeypat
     out = _notes(monkeypatch, settings, [("customer", "अगले सोमवार को 50,000 भेज दूँगा।")],  # Devanagari
                  promised_amount=50000, promised_date="2026-11-09")
     assert out["checks"] == []
+    out = _notes(monkeypatch, settings, [("customer", "આજકાલ ધંધો ધીમો છે, જોઈએ.")],  # not "today"
+                 promised_amount=120000, promised_date="2026-11-04")
+    assert out["promised_date"] is None
 
 
 def test_hindi_is_recognised_even_in_gujarati_script(settings):

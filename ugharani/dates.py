@@ -86,7 +86,7 @@ DAY_MONTH = re.compile(r"(\d{1,2})\s*(" + "|".join(m[:3] for m in MONTH_NAMES) +
 
 DAY_WORD = re.compile(r"([઀-૿]+)(?=\s*(?:તારીખ|" + "|".join(m[:3] for m in MONTH_NAMES) + r"))")
 # Said with no date at all: "ગમે ત્યારે આપજો", "નિરાંતે", "તમારી અનુકૂળતા મુજબ": no end
-WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|कभी\s*भी")
+WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|કભી\s*ભી")  # (Devanagari "कभी भी" arrives as "કભી ભી")
 
 
 ORDINALS = {"પહેલી": 1, "બીજી": 2, "ત્રીજી": 3, "ચોથી": 4, "છઠ્ઠી": 6}  # then "પાંચમી", "પંદરમી": Nમી
