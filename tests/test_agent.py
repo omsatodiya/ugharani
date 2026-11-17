@@ -112,6 +112,21 @@ def test_notes_not_backed_by_the_call_go_to_the_owner(settings, monkeypatch):
     assert out["checks"] == [] and out["promised_date"] == "2026-10-30"
 
 
+def test_notes_dont_take_a_day_or_an_open_end_as_the_promise(settings, monkeypatch):
+    out = _notes(monkeypatch, settings, [("customer", "25 તારીખે મોકલી દઈશ.")],  # 25 is a day, not ₹25
+                 promised_amount=25, promised_date="2026-11-25")
+    assert out["promised_amount"] is None and out["promised_date"] == "2026-11-25"
+    out = _notes(monkeypatch, settings, [("customer", "દિવાળી પછી કરી દઈશ.")],  # any day after Diwali
+                 promised_amount=120000, promised_date="2026-11-12")
+    assert out["promised_date"] is None and len(out["checks"]) == 1
+    out = _notes(monkeypatch, settings, [("customer", "અડધા કલાકમાં ફોન કરું.")],  # half an hour
+                 promised_amount=60000, promised_date="2026-11-04")
+    assert out["promised_amount"] is None
+    out = _notes(monkeypatch, settings, [("customer", "अगले सोमवार को 50,000 भेज दूँगा।")],  # Devanagari
+                 promised_amount=50000, promised_date="2026-11-09")
+    assert out["checks"] == []
+
+
 def test_hindi_is_recognised_even_in_gujarati_script(settings):
     from ugharani import agent as a
     said = lambda text: [{"who": "agent", "text": "..."}, {"who": "customer", "text": text}]
@@ -171,7 +186,8 @@ def test_a_yes_to_her_confirmation_gets_a_goodbye_note(settings):
     for yes in ["હા, બરાબર છે. બીજું કંઈ કામ હતું?", "હા.", "જી", "पाक्का", "ઠીક છે"]:
         _, convo = agent.for_gemini(settings, customer, [asked, {"who": "customer", "text": yes}], TODAY)
         assert convo[-1]["text"].endswith(agent.CONFIRMED_NOW) == (yes != "पाक्का"), yes
-    for not_yes in ["ના, શનિવારે.", "એક મિનિટ"]:
+    for not_yes in ["ના, શનિવારે.", "એક મિનિટ", "હા, પણ શુક્રવારે નહીં, સોમવારે મોકલીશ.", "જી, ના",
+                    "બરાબર નહીં", "હા, 50,000 જ આપીશ."]:  # (a qualified yes changes the plan)
         _, convo = agent.for_gemini(settings, customer, [asked, {"who": "customer", "text": not_yes}], TODAY)
         assert agent.CONFIRMED_NOW not in convo[-1]["text"]
     question = {"who": "agent", "text": "₹1,20,000 બાકી છે, ક્યારે મોકલશો?"}  # (not a confirmation)

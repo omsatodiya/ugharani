@@ -58,8 +58,9 @@ LATER = re.compile(r"પછી|પાછો|પાછા|પાછળથી|થ�
 BUSY = re.compile(r"બિઝી|busy|બીઝી|ડ્રાઇવ|ડ્રાઈવ|driving|ગાડી\s*ચલાવ|મીટિંગ|meeting|"
                   r"(?:અત્યારે|હમણાં|હમણા|અભી|अभी)\s*(?:વાત|બાત|बात)\s*(?:નહીં|નહિ|નથી|ન|नहीं)", re.IGNORECASE)
 CALLBACK_NOW = ("[Note for you, not said by the customer: they are asking to be called back later, not to "
-                "hold the line. If they said when, say you'll call then (e.g. \"સારું, હું સાંજે ફોન કરું છું. "
-                "આવજો.\") and end the call; if not, ask once when to call, then end. Don't press for the "
+                "hold the line. Don't promise a time: the owner sees the time they asked for. If they said "
+                "when, say you'll pass it on (e.g. \"સારું, હું નોંધ કરી લઉં છું, પછી ફોન કરીશું. આવજો.\") "
+                "and end the call; if not, ask once when suits them, then end. Don't press for the "
                 "payment now.]")
 
 # Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
@@ -93,7 +94,14 @@ CONFIRMED_NOW = ("[Note for you, not said by the customer: they have just said y
 ASKS_DATE = re.compile(r"કઈ\s*તારીખ|કયા\s*દિવસ|કયે\s*દિવસ|ક્યારે|કિસ\s*તારીખ|કૌન\s*સી\s*તારીખ|કબ\b|કબ\s*તક")
 # Her hand-over line to a Hindi speaker (guard.instead)
 OWNER_CALLS_HI = "ઇસ બારે મેં મૈં {owner}સે બાત કર લેતી હૂં, વો આપકો ફોન કરેંગે."
+# A qualified yes is no yes: "હા, પણ શુક્રવારે નહીં", "જી, ના", "બરાબર નહીં"
+NOT_QUITE = {"ના", "નહીં", "નહિ", "નથી", "પણ", "પરંતુ", "but", "नहीं", "लेकिन", "લેકિન", "મગર"}
+# "હમણાં", "આજે": a promise for today (the notes' check)
+NOW = ("હમણાં", "હમણા", "અત્યારે", "અભી", "अभी", "હાલ", "આજે", "આજ")
 HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
+# Half the money, not "અડધા કલાકમાં" (half an hour)
+HALF_OFFER = re.compile("(?:" + "|".join(HALF) + r")(?![઀-૿]*\s*(?:કલાક|મિનિટ|મિનીટ|ઘંટ|ઘડી|સેકન્ડ|દિવસ|દિન|"
+                        r"રસ્તે|घंटे|घंटा|मिनट|दिन))")
 
 
 # ---------- the checker's words (guard.py) ----------
@@ -145,5 +153,5 @@ CURRENCY = ("રૂપિય", "રૂ", "rupee")
 
 
 SUFFIXES = ("", "માં", "મા", "નો", "ના", "ની", "નું", "ને", "થી", "નુ", "વાળા", "વાળું", "ે", "ો", "s")
-REST = ("બાકીના", "બાકીનું", "બાકીનો", "બાકીની", "અડધા", "અડધું", "હપ્તા", "હપ્તે", "હપ્તો")
+REST = ("બાકીના", "બાકીનું", "બાકીનો", "બાકીની", "હપ્તા", "હપ્તે", "હપ્તો")  # (and HALF_OFFER)
 WHOLE = re.compile(r"પૂરા|પુરા|પૂરેપૂરા|પૂરું|આખું|આખી|આખા|સંપૂર્ણ|બધા\s*પૈસા|બધું\s*પેમેન્ટ|કુલ|ટોટલ|total|full")

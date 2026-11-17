@@ -270,3 +270,17 @@ def test_the_hand_over_line_follows_a_hindi_speaker():
     hindi = guard.instead(SETTINGS, CUSTOMER, hindi=True)
     assert "શેઠસે" in hindi and agent.is_hindi(hindi)
     assert check(hindi) is None
+
+
+def test_half_the_balance_needs_an_offer_of_half_the_money():
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["અડધા કલાક પછી ફોન કરો"])  # half an hour
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["અડધી રકમ શુક્રવારે આપીશ"]) is None
+    assert check("તો અડધી રકમ 13 તારીખે, બરાબર ને?") is None  # a part may run to split_days
+
+
+def test_a_date_question_does_not_cover_an_open_date_agreed_beside_it():
+    assert check("દિવાળી પછી પેમેન્ટ ચાલશે, કઈ તારીખે ફોન કરું?")
+
+
+def test_a_day_of_the_month_is_no_amount_said():
+    assert check("તો ₹1,19,975 25 તારીખે, બરાબર ને?", said=["25 તારીખે આપીશ"])  # (balance - 25)

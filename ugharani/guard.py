@@ -12,8 +12,8 @@ import re
 from datetime import date, timedelta
 
 from ugharani import dates, extract, llm
-from ugharani.lang.gu import (ASKS_DATE, CURRENCY, HALF, HANDING_OVER, NEVER, NEVER_PHRASES,  # noqa: F401
-                               OFFER, OWNER_CALLS_HI, REST, SUFFIXES, WHOLE)
+from ugharani.lang.gu import (ASKS_DATE, CURRENCY, HALF, HALF_OFFER, HANDING_OVER, NEVER,  # noqa: F401
+                               NEVER_PHRASES, OFFER, OWNER_CALLS_HI, REST, SUFFIXES, WHOLE)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -49,10 +49,15 @@ def _amounts(text: str) -> set[int]:
     return found
 
 
+DAY_WORDS = ("તારીખ", "તા", "tarikh", "तारीख", *(m[:3] for m in dates.MONTH_NAMES))
+
+
 def _numbers(text: str) -> set[int]:
-    """Any amounts the customer said: "50,000", "₹50,000", "60 હજાર", "દોઢ લાખ"."""
+    """Any amounts the customer said: "50,000", "₹50,000", "60 હજાર", "દોઢ લાખ"; not a day of the
+    month ("25 તારીખે", "18 નવેમ્બરે")."""
     tokens = [t.lower() for t in extract._TOKEN.findall(text)]
-    return {round(value) for value, _, _ in extract._number_groups(tokens)}
+    return {round(value) for value, _, end in extract._number_groups(tokens)
+            if not (end < len(tokens) and tokens[end].startswith(DAY_WORDS))}
 
 
 def problem(text: str, settings: dict, customer: dict, history: list[dict], today: date) -> str | None:
@@ -74,7 +79,7 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     balance = customer["balance"]
     known = {balance, *(b["amount"] for b in customer.get("bills", []))}
     said = set().union(*(_numbers(h["text"]) for h in history if h["who"] == "customer"), set())
-    if any(w in h["text"] for h in history if h["who"] == "customer" for w in HALF):
+    if any(HALF_OFFER.search(h["text"]) for h in history if h["who"] == "customer"):
         said.add(balance // 2)  # "અડધું દસ દિવસમાં": she may say the half as ₹60,000
     known |= said | {balance - n for n in said if 0 < n < balance}
     known |= set().union(*(_amounts(h["text"]) for h in history if h["who"] == "agent"), set())
@@ -90,10 +95,15 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     # ("₹1,20,000 માંથી ₹50,000 કાલે")
     whole = (balance in named or bool(WHOLE.search(text))) and not any(0 < n < balance for n in named)
     in_parts = _in_parts(text, history, balance)
-    asking = "?" in text and bool(ASKS_DATE.search(text))
+    # "દિવાળી પછી કઈ તારીખે?" asks for a day; it doesn't agree to "whenever after Diwali". Only
+    # when the open-ended date is in the asking clause ("દિવાળી પછી ચાલશે, કઈ તારીખે ફોન કરું?" agrees).
+    clauses = [c for c in re.split(r"[,.!?।]", text) if c.strip()]
+    stated = " ".join(c for c in clauses if not ASKS_DATE.search(c))
+    asking = "?" in text and len(stated) < len(" ".join(clauses))
+    open_stated = any(until == dates.OPEN for _, until in dates.spans(stated, today))
     for start, until in dates.spans(text, today):
-        if asking and until == dates.OPEN:
-            continue  # "દિવાળી પછી કઈ તારીખે?": asking for a day, not agreeing to "whenever"
+        if asking and until == dates.OPEN and not open_stated:
+            continue
         if until > split_by:
             return f"she was about to agree to {until.isoformat()}, past the {settings['split_days']}-day limit: {text}"
         # A range like "આવતા અઠવાડિયે" that starts in time can still be narrowed to a day in it,
@@ -110,7 +120,7 @@ def _in_parts(text: str, history: list[dict], balance: int) -> bool:
     Only money ("₹50,000", "50 હજાર", "50,000"), not any number ("UTR 4528", "18 તારીખે"); and not
     her mention of a bill ("₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે"), which is no payment plan."""
     for line, earlier in [(text, False), *((h["text"], h["who"] == "agent") for h in history)]:
-        if any(w in line for w in REST):
+        if any(w in line for w in REST) or HALF_OFFER.search(line):
             return True
         if earlier and "બિલ" in line:  # (her earlier mention of a bill; this sentence's plan counts)
             continue

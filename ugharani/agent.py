@@ -6,12 +6,14 @@ the owner, sends questions she can't answer to whoever the customer deals with,
 and writes down what was agreed.
 """
 
+import re
 from datetime import date, timedelta
 
 from ugharani import dates, guard, llm
 from ugharani.followup import OUTCOMES
 from ugharani.lang.gu import (AGREED, BUSY, CALL_VERB, CALLBACK_NOW, CONFIRM, CONFIRMED_NOW,  # noqa: F401
-                              GUJARATI_WORDS, HALF, HINDI_NOW, HINDI_WORDS, LATER, WEEKDAYS)
+                              GUJARATI_WORDS, HALF, HALF_OFFER, HINDI_NOW, HINDI_WORDS, LATER, NOT_QUITE, NOW,
+                              WEEKDAYS)
 from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
@@ -149,7 +151,7 @@ decide. Note it and say {deals_with} will call them about it.
 7. Statement, ledger, bill copy, or bank details (account number, IFSC, UPI ID): "હું તમને WhatsApp પર મોકલાવી દઉં છું." Never say account numbers or bill numbers yourself. Which bill is pending: from the list above.
 8. "એક મિનિટ", "હોલ્ડ કરો", someone else at their door: say only "{HOLD}" and wait for them.
    "બે મિનિટ પછી ફોન કરો", "પછી ફોન કરજો", busy or driving: a call-back, not a hold. If they said \
-when, say you'll call then and end; if not, ask once when to call back, then end.
+when, say you'll pass it on (don't promise that time) and end; if not, ask once when suits them, then end.
    Someone else answered (son, staff, wife; "ના, એ બહાર છે"): the dues are private, never tell them the \
 amount or that a payment is pending. Say "સારું. તો {customer['name']}ને કહેજો ને કે \
 {settings['business_name_spoken']}માંથી ફોન હતો. એ ક્યારે મળશે?", then thank them and say goodbye \
@@ -204,8 +206,12 @@ def said_yes_to_confirmation(history: list[dict]) -> bool:
     """Her last turn asked to confirm ("..., બરાબર ને?") and they said yes ("હા, બરાબર છે.")."""
     if len(history) < 2 or history[-2]["who"] != "agent" or history[-1]["who"] != "customer":
         return False
-    first = history[-1]["text"].strip().split(" ")[0].strip(".,!?।") if history[-1]["text"].strip() else ""
-    return bool(CONFIRM.search(history[-2]["text"])) and first in AGREED
+    words = [w.strip(".,!?।") for w in history[-1]["text"].split()]
+    words = [w for w in words if w]
+    # (not "હા, પણ શુક્રવારે નહીં" or "જી, ના"; nor "હા, 50,000 જ આપીશ", a new amount or date)
+    plain = (bool(words) and words[0] in AGREED and not NOT_QUITE & set(words)
+             and not re.search(r"[\d૦-૯]", history[-1]["text"]))
+    return bool(CONFIRM.search(history[-2]["text"])) and plain
 
 
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
@@ -282,9 +288,6 @@ summary: what happened, in plain Gujarati, as an office staff member would note 
 owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time they asked for (or someone else who answered asked for) goes here too, e.g. "સાંજે ફરી ફોન કરવો"."""
 
 
-NOW = ("હમણાં", "હમણા", "અત્યારે", "અભી", "अभी", "હાલ", "આજે", "આજ")
-
-
 def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> list[str]:
     """Gemini's promise checked against the call itself: a date someone said (as `dates.py` reads
     it) and an amount someone said, the balance, half of it, or what is left after a part. An
@@ -296,14 +299,15 @@ def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> 
         balance, amount = customer["balance"], out["promised_amount"]
         heard = set().union(*(guard._numbers(line) for line in lines), set())
         ok = {balance, *heard, *(balance - n for n in heard if 0 < n < balance)}
-        if any(w in line for line in lines for w in HALF):
+        if any(HALF_OFFER.search(line) for line in lines):
             ok.add(balance // 2)
         if amount not in ok:
             checks.append(f"નોંધ તપાસો: {rupees(amount)} ની રકમ ફોનમાં સંભળાઈ નથી.")
             out["promised_amount"] = None
     if out.get("promised_date") and out.get("outcome") == "promised":  # (a paid date is in the past)
         when = date.fromisoformat(out["promised_date"])
-        spans = [span for line in lines for span in dates.spans(line, today)]
+        # (not "દિવાળી પછી": an open end would let any later date through)
+        spans = [span for line in lines for span in dates.spans(line, today) if span[1] != dates.OPEN]
         said_now = when == today and any(w in line for line in lines for w in NOW)
         if not said_now and not any(start <= when <= until for start, until in spans):
             checks.append(f"નોંધ તપાસો: વાયદાની તારીખ {spoken_date(when)} ફોનમાં સંભળાઈ નથી.")
