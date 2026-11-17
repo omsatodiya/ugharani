@@ -29,6 +29,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 
 from ugharani import agent, gnani, guard, llm, speech, vad
+from ugharani.lang import gu
+from ugharani.lang.gu import (ACK, ACKS, BACKCHANNEL, FILLERS, HELLO, HELLO_SHORT, LINE_DROP_BYE,  # noqa: F401
+                               NO_ANSWER_BYE, SORRY, YES)
+from ugharani.lang.gu import HOLD_WORDS as HOLD
 
 log = logging.getLogger("uvicorn.error")
 
@@ -58,21 +62,11 @@ WORDS_WAIT = 2.0       # paused, they stopped, Gnani heard speech: wait this lon
 PAUSE_MAX = 8.0        # paused this long and still talking: they have the floor; she stops
 HOLD_WAIT = 60.0       # "એક મિનિટ": she waits this long in silence before "હેલો?"
 
-# Fixed lines: synthesised once, then always played from the cache.
-FILLERS = ["જી,", "હા,", "અચ્છા,"]
-# The short acknowledgements the agent starts a reply with (agent.py asks for exactly these):
-# bundled clips, so the first word of a reply plays the moment Gemini writes it.
-ACKS = ["હા જી.", "જી.", "સારું.", "બરાબર.", "અચ્છા.", "હં."]
-HELLO = "હેલો? સાંભળાય છે?"
-HELLO_SHORT = "હેલો?"
-NO_ANSWER_BYE = "લાગે છે લાઇન બરાબર નથી. હું થોડી વાર પછી ફોન કરું છું. આવજો."
-SORRY = "માફ કરજો, લાઇન થોડી ખરાબ છે. ફરી કહેશો?"
-LINE_DROP_BYE = "માફ કરજો, લાઇનમાં તકલીફ છે. હું પછી ફોન કરું છું. આવજો."
 FIXED_LINES = [*FILLERS, *ACKS, HELLO, HELLO_SHORT, NO_ANSWER_BYE, SORRY, LINE_DROP_BYE, agent.HOLD]
 
 
 def time_up_bye(settings: dict) -> str:
-    return f"સારું, હું આ વાત {settings['owner_name']}ને જણાવી દઉં છું. આભાર, આવજો."
+    return gu.time_up_bye(settings["owner_name"])
 
 
 SENTENCE_END = re.compile(r"(?<=[.?!।])\s+")
@@ -121,9 +115,6 @@ async def segments(sents: AsyncIterator[str]) -> AsyncIterator[str]:
         yield group
 
 
-ACK = re.compile(r"^(હા|જી|હા જી|અચ્છા|બરાબર|સારું|ઓકે)[,.!]?\s+")
-
-
 def drop_ack(sentence: str) -> str:
     """After a filler, 'જી, ... હા, 10 તારીખે' would stutter: drop the reply's own opening acknowledgement."""
     rest = ACK.sub("", sentence, count=1)
@@ -163,23 +154,10 @@ def echoes(heard: str, said: str) -> bool:
     return similarity(heard, said) >= ECHO_SIMILARITY
 
 
-# Listening noises people make while the other side talks; a person doesn't stop for them.
-BACKCHANNEL = {"હા", "હાં", "હં", "હમ", "હમ્મ", "જી", "હા જી", "ઓકે", "ok", "okay", "બરાબર", "અચ્છા", "સારું",
-               "हाँ", "हां", "हा", "जी", "हम्म", "अच्छा", "ठीक", "ठीक है", "बराबर"}
-
-
-YES = {"હા", "હાં", "હં", "જી", "બોલો", "બોલ", "બોલિએ", "બોલીએ", "બોલિયે", "હેલો", "હલો", "હા જી", "ok", "ઓકે",
-       "हाँ", "हां", "हा", "जी", "बोलिए", "बोलो", "हेलो", "हैलो"}
-
-
 def said_yes(text: str) -> bool:
     """Did they answer "હેલો રમેશભાઈ?" with a yes ("હા", "હા બોલો", "હેલો")? Not: "કોણ?", "ના, એ બહાર છે"."""
     words = _words(text)
     return bool(words) and words[0] in YES and "ના" not in words
-
-
-HOLD = re.compile(r"(એક|બે|1|2|ek|be)\s*(મિનિટ|મિનીટ|મિનિટે|સેકન્ડ|minute|second)|હોલ્ડ|hold|"
-                  r"[ઊઉ]ભા\s*રહો|[ઊઉ]ભા\s*રે|રુકો|રૂકો|रुको|एक\s*मिनट|ठहरो", re.IGNORECASE)
 
 
 def asks_to_hold(text: str) -> bool:

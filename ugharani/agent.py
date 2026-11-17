@@ -10,11 +10,12 @@ from datetime import date, timedelta
 
 from ugharani import guard, llm
 from ugharani.followup import OUTCOMES
+from ugharani.lang.gu import GUJARATI_WORDS, HINDI_NOW, HINDI_WORDS, WEEKDAYS  # noqa: F401
+from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
 
 END = "<END>"  # the agent ends its last line with this to hang up
-WEEKDAYS = ["સોમવાર", "મંગળવાર", "બુધવાર", "ગુરુવાર", "શુક્રવાર", "શનિવાર", "રવિવાર"]
 
 
 def greeting(customer: dict) -> str:
@@ -58,9 +59,6 @@ def _bills_line(customer: dict) -> str:
         return ""
     listed = ", ".join(f"{rupees(b['amount'])} (due {spoken_date(date.fromisoformat(b['due_date']))})" for b in bills)
     return f"\nOpen bills, oldest first (what is still unpaid of each): {listed}."
-
-
-HOLD = ("હા જી, વાંધો નહીં.")
 
 
 def system_prompt(settings: dict, customer: dict, today: date, last_call: dict | None = None) -> str:
@@ -165,15 +163,6 @@ and end that message with {END}. The goodbye message never contains a question. 
 
 # ---------- which language the customer speaks ----------
 
-# Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
-# Gujarati and answer in Gujarati. These words tell the two apart (each is common in one only).
-HINDI_WORDS = {"હૈ", "હૈં", "હોગા", "હોગી", "જાએગા", "જાયેગા", "કો", "કા", "કી", "તક", "અભી", "અગલે", "અગલા",
-               "કબ", "ક્યા", "ક્યોં", "મૈં", "હમ", "દૂંગા", "દુંગા", "દેંગે", "દેગા", "કરુંગા", "કરૂંગા", "કરેંગે",
-               "ભેજ", "ભેજૂંગા", "ભેજુંગા", "ભેજેંગે", "રહા", "બોલિએ", "બોલિયે", "ઠીક", "લેકિન", "પર", "સાથ",
-               "હાં", "નહીં", "જી"}
-GUJARATI_WORDS = {"છે", "છું", "છો", "નથી", "તમે", "મને", "આવતા", "આવતી", "આવતે", "મોકલી", "મોકલીશ", "કરીશ",
-                  "દઈશ", "થઈ", "શું", "કેમ", "હમણાં", "હમણા", "પછી", "ક્યારે", "આપીશ", "જશે"}
-
 
 def speaks_hindi(history: list[dict]) -> bool:
     """Does the customer speak Hindi? Judged on their last two turns, so a switch is followed."""
@@ -188,11 +177,6 @@ def speaks_hindi(history: list[dict]) -> bool:
         elif word in GUJARATI_WORDS:
             gujarati += 1
     return hindi > gujarati
-
-
-HINDI_NOW = ("[Note for you, not said by the customer: they are speaking HINDI. Reply in simple, polite "
-             "spoken Hindi (આપ, ભેજેંગે, કરેંગે), not Gujarati, still written in Gujarati script, e.g. "
-             "\"જી, ઠીક હૈ. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\"]")
 
 
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,

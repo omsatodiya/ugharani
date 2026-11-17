@@ -12,61 +12,17 @@ import re
 from datetime import date, timedelta
 
 from ugharani import dates, extract, llm
+from ugharani.lang.gu import (CURRENCY, HANDING_OVER, NEVER, NEVER_PHRASES, OFFER, REST,  # noqa: F401
+                               SUFFIXES, WHOLE)
 
 log = logging.getLogger("uvicorn.error")
 
-# Things she never brings up (the owner decides them, or they're never said at all). Matched on
-# words, so "ભાવ" in "ભાવનગર" doesn't count.
-NEVER = {
-    "discount": ["ડિસ્કાઉન્ટ", "discount", "છૂટ", "છૂટછાટ", "કસર", "કમિશન", "રાહત"],
-    "interest or penalty": ["વ્યાજ", "interest", "ઇન્ટરેસ્ટ", "પેનલ્ટી", "penalty", "દંડ", "ચાર્જ", "ચાર્જીસ",
-                            "ફી", "fee", "સરચાર્જ"],
-    "legal threat": ["કોર્ટ", "court", "વકીલ", "કેસ", "લીગલ", "legal", "નોટિસ", "notice", "પોલીસ", "શાખ", "આબરૂ", "બદનામી", "ઇજ્જત", "ઈજ્જત"],
-    "stopping supply": ["સપ્લાય બંધ", "માલ બંધ", "ઓર્ડર બંધ", "બ્લોક", "block", "બ્લેકલિસ્ટ", "blacklist"],
-    "rate": ["ભાવ", "rate", "રેટ", "કિંમત", "પ્રાઇસ", "પ્રાઈસ", "price", "એમઆરપી", "mrp"],
-}
-# Phrases, not single words: "ઓછું કરી આપીશું" (we'll reduce it), "માફ કરી દઈશું" (we'll waive it,
-# but "માફ કરજો" is "sorry"), any percentage but 100 ("સો ટકા" is "definitely"); supply held,
-# stopped or cancelled ("ઓર્ડર નહીં મળે", "ટ્રક રોકી દીધી", "ડિલિવરી ... બંધ"); a name spoiled.
-_NUMBER_WORD = "(?:" + "|".join(sorted((w for w, v in extract.NUMBER_WORDS.items()
-                                        if isinstance(v, int) and v < 100 and not w.isascii()), key=len, reverse=True)) + ")"
-NEVER_PHRASES = {
-    "discount": re.compile(
-        r"(?<![\d.])(?!100\b)\d{1,2}(?:\.\d+)?\s*(?:%|ટકા|પર્સન્ટ|percent)"
-        r"|" + _NUMBER_WORD + r"\s*(?:%|ટકા|પર્સન્ટ)"
-        r"|(?<![઀-૿])(?:ઓછ[ુંાીો]+|કમ)\s+(?:કરી|કર|આપ|ભર|ચૂકવ|ચુકવ|લઈ|લે|દે|ચાલશે|ગણ|રકમ|પૈસા|રૂપિયા)"
-        r"|વેવ\s*કર|waive|રાઉન્ડ\s*ઓફ|round\s*off|સેટલ\s*કર|settle"
-        r"|કાપી\s*(?:ને|લ|દ|આપ)|બાદ\s*(?:કરી|કર)\s*(?:દ|આપ|લ)|જતું\s*કર"
-        r"|માફ\s*(?:પણ\s*)?(?:કરી\s*(?:દ|શક|આપ)|કરીશ|કરીએ|કર\s*દ|થઈ\s*જ|થશે|હો\s*જ)"),
-    "stopping supply": re.compile(
-        r"(?:ઓર્ડર|માલ|સામાન|સપ્લાય|ડિલિવરી|ડિસ્પેચ|બુકિંગ|ડીલરશીપ|ડીલરશિપ|લાયસન્સ|ગાડી|ટ્રક|પાઇપ|પાઈપ"
-        r"|order|supply|delivery|booking|dealership)[^.?!।]{0,40}?"
-        r"(?:બંધ|રોક|અટકાવ|હોલ્ડ|hold|કેન્સલ|cancel|સસ્પેન્ડ|suspend|રદ|કાપ|(?:નહીં|નહિ|નઈ|नहीं)\s*"
-        r"(?:મળે|મળશે|આપ|મોકલ|આવે|મિલ|ભેજ|નીકળે|ઉપડે|થાય|થશે|જાય|થવા|રવાના|અનલોડ|લોડ|ડિસ્પેચ))"
-        r"|(?:પેમેન્ટ|પૈસા)[^.?!।]{0,30}(?:પછી|વિના|વગર)\s*(?:જ\s*)?[^.?!।]{0,30}"
-        r"(?:ડિસ્પેચ|રવાના|લોડ|મોકલ|નીકળ|ઉપડ)"),  # "પેમેન્ટ આવે પછી જ રવાના થશે"
-    "legal threat": re.compile(r"કાયદ|ફરિયાદ\s*(?:નોંધાવ|કરવી|કરીશ|કરશું|દાખલ)"
-                               r"|(?:પોલિસ|પુલિસ)(?:માં|ને|નો|ની|થી)?(?![઀-૿])|નામ[઀-૿]*\s+(?:\S+\s+)?(?:ખરાબ|બગાડ)|બગાડ[^.?!।]{0,12}(?:નામ|શાખ)"
-                               r"|સંબંધ[઀-૿]*\s+(?:\S+\s+)?(?:પૂરા|તોડ|બંધ|ખતમ)"),
-}
-# She offers something herself ("...લઈ લઈશું", "કરી આપીશું", "ચાલશે"): not a hand-over, even if
-# the owner is named in the same sentence.
-OFFER = re.compile(r"ઈશું|ીશું|ઈશ\b|આપશું|કરશું|ચાલશે|દઈએ|લઈએ|દેંગે|કર દેંગે")
 # Topics the owner may discuss, so she may say the owner will call about them. Threats and
 # stopping supply are never said, handed over or not.
 HANDED_OVER_TOPICS = {"discount", "interest or penalty", "rate"}
-# A sentence that hands the topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે") may name it. (A false
-# block here costs little: she says the standard hand-over line instead.)
-HANDING_OVER = re.compile(
-    r"ફોન કરશે|ફોન કરી લેશે|વાત કરી લેજો|વાત કરશે|વાત કરી લેશે|કૉલ કરશે|કોલ કરશે|ફોન જોડ|ચર્ચા કરી લેજો"
-    r"|નક્કી કરશે|નક્કી કરે|નક્કી કરજો|વાત કરાવ|વાત કરવી|ફોન કરજો|વાત મુકીશ|જ કહેશે|જણાવશે|જણાવીશ|જણાવું|નિર્ણય લેશે|સત્તા નથી|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
 
 AMOUNT = re.compile(r"₹\s?([\d,]+)|([\d,]+)\s*(?:રૂપિયા|રૂ\.|રૂ\b|/-|rupees|rs\b)"
                     r"|(?<![\d,])(\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?![\d,])")  # "1,50,000", "100,000"
-CURRENCY = ("રૂપિય", "રૂ", "rupee")
-
-
-SUFFIXES = ("", "માં", "મા", "નો", "ના", "ની", "નું", "ને", "થી", "નુ", "વાળા", "વાળું", "ે", "ો", "s")
 
 
 def _is(word: str, term: str) -> bool:
@@ -141,10 +97,6 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
             return (f"she was about to agree to the whole amount on {start.isoformat()}, past the "
                     f"{settings['promise_days']}-day limit: {text}")
     return None
-
-
-REST = ("બાકીના", "બાકીનું", "બાકીનો", "બાકીની", "અડધા", "અડધું", "હપ્તા", "હપ્તે", "હપ્તો")
-WHOLE = re.compile(r"પૂરા|પુરા|પૂરેપૂરા|પૂરું|આખું|આખી|આખા|સંપૂર્ણ|બધા\s*પૈસા|બધું\s*પેમેન્ટ|કુલ|ટોટલ|total|full")
 
 
 def _in_parts(text: str, history: list[dict], balance: int) -> bool:
