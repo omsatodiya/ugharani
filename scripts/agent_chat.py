@@ -142,7 +142,7 @@ Reply as this person would on the phone: one or two short sentences, in Gujarati
 speaks Hindi, speak HINDI words (not Gujarati), just written in Gujarati script, e.g. "हाँ बोलिए" -> \
 "હાં બોલિએ". If the caller has said goodbye, reply with a short goodbye."""
 
-CONFIRM, YES_WORDS = agent.CONFIRM, agent.AGREED
+CONFIRM = agent.CONFIRM
 
 
 HINDI_ACKS = {"ઠીક હૈ.", "જી, ઠીક હૈ.", "અચ્છા જી."}  # (as "જી." in Gujarati: said on many turns)
@@ -186,7 +186,7 @@ async def talk(name: str, pause: float) -> dict:
         text, done = agent.split_end(await ask(*agent.for_gemini(SETTINGS, customer, history, TODAY)))
         if why := guard.problem(text, SETTINGS, customer, history, TODAY):
             stops.append(why)
-            text, done = guard.instead(SETTINGS, customer), False
+            text, done = guard.instead(SETTINGS, customer, agent.speaks_hindi(history)), False
         history.append({"who": "agent", "text": text})
         await asyncio.sleep(pause)
         if done:
@@ -217,11 +217,12 @@ def problems(call: dict) -> list[str]:
                 out.append(f"said twice: {sentence}")
             seen.add(sentence)
     turns = call["history"]
-    for i in range(len(turns) - 2):
-        if (turns[i]["who"] == "agent" and CONFIRM.search(turns[i]["text"])
-                and turns[i + 1]["text"].strip(" .,!").split(" ")[0].strip(".,!") in YES_WORDS
-                and CONFIRM.search(turns[i + 2]["text"])):
-            out.append(f"confirmed again after a yes: {turns[i + 2]['text']}")
+    # once they've said yes to her confirmation, she doesn't confirm again (however many turns on)
+    yes_at = next((i + 1 for i in range(len(turns) - 1) if turns[i]["who"] == "agent"
+                   and agent.said_yes_to_confirmation(turns[:i + 2])), None)
+    if yes_at and (again := [t["text"] for t in turns[yes_at + 1:]
+                             if t["who"] == "agent" and CONFIRM.search(t["text"])]):
+        out.append(f"confirmed again after a yes: {again[0]}")
     replies = [t for t in her(call)[1:] if t not in fixed]
     # (a Gujarati persona may drift into Hindi: then a Hindi reply follows them, as it should)
     turns_before = [(t["text"], turns[:i]) for i, t in enumerate(turns) if t["who"] == "agent" and i]
@@ -283,6 +284,8 @@ if __name__ == "__main__":
     parser.add_argument("--runs", type=int, default=3, help="times to run each scenario (default 3)")
     parser.add_argument("--pause", type=float, default=4.0, help="seconds between requests (free tier: per-minute limit)")
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
     if unknown := [n for n in args.scenarios if n not in SCENARIOS]:
         parser.error(f"unknown scenario {', '.join(unknown)}")
     sys.exit(asyncio.run(main(args.scenarios or list(SCENARIOS), args.runs, args.pause)))

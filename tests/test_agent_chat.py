@@ -34,6 +34,9 @@ def test_a_good_call_passes():
     (call(GOOD, checks=["નોંધ તપાસો: ..."]), "notes: નોંધ તપાસો"),
     (call(GOOD[:5] + [("customer", "હા, બરાબર."), ("agent", "તો શુક્રવારે ₹1,20,000, બરાબર ને?"),
                       ("customer", "હા"), ("agent", "આભાર. આવજો.")]), "confirmed again"),
+    (call(GOOD[:5] + [("customer", "હા."), ("agent", "સારું. બીજું કંઈ?"), ("customer", "ના."),
+                      ("agent", "તો શુક્રવારે પેમેન્ટ, બરાબર ને?"), ("customer", "હા"), ("agent", "આવજો.")]),
+     "confirmed again"),
     (call(GOOD[:3] + [("customer", "જોઉં છું."), ("agent", "જી. ₹1,20,000 નું પેમેન્ટ બાકી છે, એ ક્યારે મોકલશો?")]
           + GOOD[3:]), "said twice"),
     (call(GOOD[:3] + [("customer", "હા"), ("agent", "જી, તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?")] + GOOD[3:]),
