@@ -87,6 +87,13 @@ def test_missed_call_is_retried_next_day(conn):
     assert followup.to_call(conn, TODAY + timedelta(days=1))[0]["reason"] == "retry"
 
 
+def test_call_back_is_tried_the_next_day(conn):
+    credit(conn, "રમેશભાઈ ને ₹1,00,000 નો માલ, 20 દિવસ", days_ago=30)
+    call_on(conn, "રમેશભાઈ", TODAY, outcome="callback")
+    assert names(conn) == []
+    assert followup.to_call(conn, TODAY + timedelta(days=1))[0]["reason"] == "callback"  # (not in 3 days)
+
+
 def test_owner_cases_and_switches_stop_calls(conn):
     credit(conn, "રમેશભાઈ ને ₹1,00,000 નો માલ, 20 દિવસ", days_ago=30)
     credit(conn, "કાંતાબેન ને ₹50,000 નો માલ, 20 દિવસ", days_ago=30)

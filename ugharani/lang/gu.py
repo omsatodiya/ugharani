@@ -42,8 +42,25 @@ BACKCHANNEL = {"હા", "હાં", "હં", "હમ", "હમ્મ", "જ�
 YES = {"હા", "હાં", "હં", "જી", "બોલો", "બોલ", "બોલિએ", "બોલીએ", "બોલિયે", "હેલો", "હલો", "હા જી", "ok", "ઓકે",
        "हाँ", "हां", "हा", "जी", "बोलिए", "बोलो", "हेलो", "हैलो"}
 
-HOLD_WORDS = re.compile(r"(એક|બે|1|2|ek|be)\s*(મિનિટ|મિનીટ|મિનિટે|સેકન્ડ|minute|second)|હોલ્ડ|hold|"
-                        r"[ઊઉ]ભા\s*રહો|[ઊઉ]ભા\s*રે|રુકો|રૂકો|रुको|एक\s*मिनट|ठहरो", re.IGNORECASE)
+# "એક મિનિટ", "જરા રાહ જુઓ", "ફોન ચાલુ રાખો": they'll be back on the line. ("ચાલુ રાખો" alone can
+# mean "go on talking": only with ફોન/લાઈન.)
+HOLD_WORDS = re.compile(r"(એક|બે|1|2|ek|be)\s*(મિનિટ|મિનીટ|મિનિટે|મિનટ|સેકન્ડ|minute|second|min)|હોલ્ડ|hold|"
+                        r"[ઊઉ]ભા\s*(?:રહો|રે|રહેજો)|રુકો|રૂકો|રુકિએ|રૂકિએ|रुको|रुकिए|एक\s*(?:मिनट|सेकंड)|ठहरो|"
+                        r"રાહ\s*(?:જુઓ|જુવો|જોજો|જોવો)|(?:ફોન|લાઈન|લાઇન)\s*ચાલુ\s*રાખ|(?:લાઈન|લાઇન)\s*પર\s*રહ",
+                        re.IGNORECASE)
+# "બે મિનિટ પછી ફોન કરો", "પછી ફોન કરજો", "હું સામેથી ફોન કરું", "busy છું": call later, not hold
+# (the line is about to go dead). A call verb with a later time, or plainly busy.
+CALL_VERB = re.compile(r"(?:ફોન|કૉલ|કોલ|call|फोन|फ़ोन|कॉल)\s*(?:કરો|કરજો|કરજે|કરશો|કરીશ|કરું|કરુ|કરીએ|કરિએ|"
+                       r"કરિયે|કીજિએ|કરના|કરૂંગા|કરુંગા|કરેંગે|કર|करो|कीजिए|करना|करिए|करूँगा|करूंगा|करेंगे|कर)(?![઀-૿ऀ-ॿ])",
+                       re.IGNORECASE)  # (a whole word: not "ફોન કર્યો હતો", I called)
+LATER = re.compile(r"પછી|પાછો|પાછા|પાછળથી|થોડી\s*વાર|બાદમાં|બાદ|સાંજે|સવારે|બપોરે|(?<!ગઈ )(?<!ગઇ )કાલે|પરમ|કલાક|મિનિટ|મિનીટ|"
+                   r"સામેથી|અઠવાડિ|later|फिर|बाद|शाम|सुबह|कल|घंटे|ફિર|શામ|ઘંટે", re.IGNORECASE)
+BUSY = re.compile(r"બિઝી|busy|બીઝી|ડ્રાઇવ|ડ્રાઈવ|driving|ગાડી\s*ચલાવ|મીટિંગ|meeting|"
+                  r"(?:અત્યારે|હમણાં|હમણા|અભી|अभी)\s*(?:વાત|બાત|बात)\s*(?:નહીં|નહિ|નથી|ન|नहीं)", re.IGNORECASE)
+CALLBACK_NOW = ("[Note for you, not said by the customer: they are asking to be called back later, not to "
+                "hold the line. If they said when, say you'll call then (e.g. \"સારું, હું સાંજે ફોન કરું છું. "
+                "આવજો.\") and end the call; if not, ask once when to call, then end. Don't press for the "
+                "payment now.]")
 
 # Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
 # Gujarati and answer in Gujarati. These words tell the two apart (each is common in one only).

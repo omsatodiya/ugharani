@@ -10,7 +10,8 @@ from datetime import date, timedelta
 
 from ugharani import guard, llm
 from ugharani.followup import OUTCOMES
-from ugharani.lang.gu import GUJARATI_WORDS, HINDI_NOW, HINDI_WORDS, WEEKDAYS  # noqa: F401
+from ugharani.lang.gu import (BUSY, CALL_VERB, CALLBACK_NOW, GUJARATI_WORDS, HINDI_NOW, HINDI_WORDS,  # noqa: F401
+                              LATER, WEEKDAYS)
 from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
@@ -141,7 +142,8 @@ decide. Note it and say {deals_with} will call them about it.
 "એ માટે તમે {deals_with} સાથે વાત કરી લેજો". Never invent facts, rates or amounts.
 7. Statement, ledger, bill copy, or bank details (account number, IFSC, UPI ID): "હું તમને WhatsApp પર મોકલાવી દઉં છું." Never say account numbers or bill numbers yourself. Which bill is pending: from the list above.
 8. "એક મિનિટ", "હોલ્ડ કરો", someone else at their door: say only "{HOLD}" and wait for them.
-   Busy or driving: ask when to call back, then end.
+   "બે મિનિટ પછી ફોન કરો", "પછી ફોન કરજો", busy or driving: a call-back, not a hold. If they said \
+when, say you'll call then and end; if not, ask once when to call back, then end.
    Someone else answered (son, staff, wife; "ના, એ બહાર છે"): the dues are private, never tell them the \
 amount or that a payment is pending. Say "સારું. તો {customer['name']}ને કહેજો ને કે \
 {settings['business_name_spoken']}માંથી ફોન હતો. એ ક્યારે મળશે?", then thank them and say goodbye \
@@ -179,16 +181,26 @@ def speaks_hindi(history: list[dict]) -> bool:
     return hindi > gujarati
 
 
+def asks_for_callback(text: str) -> bool:
+    """"બે મિનિટ પછી ફોન કરો", "સાંજે ફોન કરજો", "હું સામેથી ફોન કરું", "busy છું": call later.
+    (Not a hold: she would wait on a line they have left.)"""
+    return bool(CALL_VERB.search(text) and LATER.search(text)) or bool(BUSY.search(text))
+
+
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
                last_call: dict | None = None) -> tuple[str, list[dict]]:
     """The system prompt and conversation for the agent's next reply.
 
-    When the customer speaks Hindi, a note goes on their latest turn (the end of the conversation
-    weighs more than a rule deep in the prompt); the stored transcript is not changed.
+    When the customer speaks Hindi or asks to be called back, a note goes on their latest turn (the
+    end of the conversation weighs more than a rule deep in the prompt); the stored transcript is
+    not changed.
     """
     prompt = system_prompt(settings, customer, today, last_call)
-    if history and history[-1]["who"] == "customer" and speaks_hindi(history):
-        history = [*history[:-1], {"who": "customer", "text": f"{history[-1]['text']}\n{HINDI_NOW}"}]
+    if history and history[-1]["who"] == "customer":
+        notes = [note for note, applies in ((HINDI_NOW, speaks_hindi(history)),
+                                            (CALLBACK_NOW, asks_for_callback(history[-1]["text"]))) if applies]
+        if notes:
+            history = [*history[:-1], {"who": "customer", "text": "\n".join([history[-1]["text"], *notes])}]
     return prompt, [dict(h) for h in history]  # a snapshot: the call goes on while Gemini writes
 
 
@@ -243,7 +255,7 @@ promised_amount: rupees they promised (or say they paid), else null; if paying i
 only, with its date (the summary mentions the rest). promised_date: resolve words like \
 "સોમવારે", "આવતા અઠવાડિયે" (take its Monday) or "15 તારીખે" to YYYY-MM-DD from today, else null.
 summary: what happened, in plain Gujarati, as an office staff member would note it. Digits 0-9 only.
-owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time asked by someone else who answered goes here too."""
+owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time they asked for (or someone else who answered asked for) goes here too, e.g. "સાંજે ફરી ફોન કરવો"."""
 
 
 async def notes(settings: dict, customer: dict, history: list[dict], today: date) -> dict:

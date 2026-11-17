@@ -234,7 +234,7 @@ def to_call(conn: sqlite3.Connection, today: date) -> list[dict]:
 
     - first call `remind_after_days` after the oldest unpaid due date
     - while a promise is still in the future, wait; once it passes unpaid, call
-    - a call that didn't get through is retried the next day
+    - a call that didn't get through, or asked to be called later, is tried again the next day
     - otherwise call again every `repeat_every_days`
     - never: auto calls off (globally or for this customer), or the owner took it over
     """
@@ -257,6 +257,10 @@ def to_call(conn: sqlite3.Connection, today: date) -> list[dict]:
                 if (today - _call_day(last)).days < 1:
                     continue
                 reason = "retry"  # didn't get through: try again the next day
+            elif last["outcome"] == "callback":
+                if (today - _call_day(last)).days < 1:
+                    continue
+                reason = "callback"  # asked to be called later: the next day, not in a few days
             elif last["promised_date"]:
                 promised = date.fromisoformat(last["promised_date"])
                 if today <= promised:

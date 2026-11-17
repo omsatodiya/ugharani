@@ -74,3 +74,22 @@ def test_hindi_is_recognised_even_in_gujarati_script(settings):
     assert convo[-1]["text"].endswith(a.HINDI_NOW)  # the note rides on their latest turn
     _, convo = a.for_gemini(settings, customer, said("હા બોલો."), date(2026, 11, 3))
     assert convo[-1]["text"] == "હા બોલો."
+
+
+def test_a_call_back_is_told_apart_from_a_hold_and_noted_for_gemini(settings):
+    for text in ["બે મિનિટ પછી ફોન કરો", "પછી ફોન કરજો", "સાંજે ફોન કરજો", "હું સામેથી ફોન કરું છું",
+                 "થોડી વાર પછી કૉલ કરો", "અત્યારે હું ડ્રાઇવ કરું છું", "busy છું, કાલે ફોન કરજો",
+                 "હમણાં વાત નહીં થાય", "बाद में फोन करो", "અભી બાત નહીં હો પાએગી, શામ કો ફોન કરના"]:
+        assert agent.asks_for_callback(text), text
+    for text in ["એક મિનિટ", "મેં ગઈ કાલે ફોન કર્યો હતો", "શુક્રવારે પેમેન્ટ કરી દઈશ", "હા બોલો",
+                 "ફોન ચાલુ રાખો", "પછી આપીશ"]:
+        assert not agent.asks_for_callback(text), text
+
+    customer = {"name": "રમેશભાઈ", "balance": 100000, "earliest_due": "2026-11-01"}
+    said = [{"who": "agent", "text": "..."}, {"who": "customer", "text": "બે મિનિટ પછી ફોન કરો"}]
+    _, convo = agent.for_gemini(settings, customer, said, date(2026, 11, 3))
+    assert convo[-1]["text"] == f"બે મિનિટ પછી ફોન કરો\n{agent.CALLBACK_NOW}"
+    assert said[-1]["text"] == "બે મિનિટ પછી ફોન કરો"  # (the transcript itself is unchanged)
+    hindi = [{"who": "agent", "text": "..."}, {"who": "customer", "text": "અભી બાત નહીં હો પાએગી, શામ કો ફોન કરના"}]
+    _, convo = agent.for_gemini(settings, customer, hindi, date(2026, 11, 3))
+    assert convo[-1]["text"].endswith(f"{agent.HINDI_NOW}\n{agent.CALLBACK_NOW}")

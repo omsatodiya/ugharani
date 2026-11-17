@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ugharani import clock, gnani, guard, live, llm, main, speech
+from ugharani import agent, clock, gnani, guard, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
@@ -999,10 +999,35 @@ def test_ek_minute_gets_an_instant_ok_and_a_long_wait(phone, monkeypatch):
 
 
 def test_asks_to_hold():
-    for text in ["એક મિનિટ", "એક મિનીટ હં", "હોલ્ડ કરો", "ઊભા રહો", "एक मिनट", "એક મિનિટ, હું બિલ જોઈ લઉં"]:
+    for text in ["એક મિનિટ", "એક મિનીટ હં", "હોલ્ડ કરો", "ઊભા રહો", "एक मिनट", "એક મિનિટ, હું બિલ જોઈ લઉં",
+                 "જરા રાહ જુઓ", "રાહ જોજો હં", "એક સેકન્ડ હં", "ફોન ચાલુ રાખો", "લાઈન પર રહો", "બસ એક મિનિટ",
+                 "रुकिए", "એક મિનટ રુકિએ"]:
         assert live.asks_to_hold(text), text
-    for text in ["એક મહિનામાં આપીશ", "2 મિનિટ પહેલાં જ મોકલ્યા, એક મિનિટ પણ મોડું નહીં થાય એની ગેરંટી આપું છું", "ના"]:
+    for text in ["એક મહિનામાં આપીશ", "2 મિનિટ પહેલાં જ મોકલ્યા, એક મિનિટ પણ મોડું નહીં થાય એની ગેરંટી આપું છું", "ના",
+                 "ચાલુ રાખો",  # "go on"
+                 # call-backs: the line is about to go dead
+                 "બે મિનિટ પછી ફોન કરો", "એક મિનિટ, પછી ફોન કરજો", "દસ મિનિટ પછી ફોન કરજો ને"]:
         assert not live.asks_to_hold(text), text
+
+
+def test_call_me_later_is_a_call_back_not_a_hold(phone, monkeypatch):
+    """"બે મિનિટ પછી ફોન કરો" goes to Gemini, told it's a call-back; she doesn't sit silent on the line."""
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "HOLD_WAIT", 30.0)
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?", "સારું, હું બે મિનિટ પછી ફોન કરું છું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "બે મિનિટ પછી ફોન કરો")
+        until(ws, {"text": "સારું, હું બે મિનિટ પછી ફોન કરું છું."})
+        until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 2
+    asked = rec["histories"][1][-1]["text"]
+    assert asked.startswith("બે મિનિટ પછી ફોન કરો") and agent.CALLBACK_NOW in asked
+    said = [h["text"] for h in client.get(f"/calls/{call_id}").json()["transcript"]]
+    assert agent.HOLD not in said
 
 
 def test_an_overloaded_model_falls_back_for_the_notes_too(monkeypatch):

@@ -161,8 +161,9 @@ def said_yes(text: str) -> bool:
 
 
 def asks_to_hold(text: str) -> bool:
-    """"એક મિનિટ", "હોલ્ડ કરો", "એક મિનિટ, હું બિલ જોઈ લઉં": they'll be back; not something to answer."""
-    return len(_words(text)) <= 7 and bool(HOLD.search(text))
+    """"એક મિનિટ", "હોલ્ડ કરો", "એક મિનિટ, હું બિલ જોઈ લઉં": they'll be back; not something to answer.
+    Not "બે મિનિટ પછી ફોન કરો": that is a call-back, for Gemini to answer."""
+    return len(_words(text)) <= 7 and bool(HOLD.search(text)) and not agent.asks_for_callback(text)
 
 
 def is_backchannel(text: str) -> bool:

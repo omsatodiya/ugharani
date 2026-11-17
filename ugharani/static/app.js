@@ -373,7 +373,7 @@ const CALL_STATUS = {
   ringing: ["રિંગ વાગે છે", "warn"], in_progress: ["વાત ચાલુ", "warn"], missed: ["ઉપાડ્યો નહીં", "quiet"],
   declined: ["કાપ્યો", "quiet"], failed: ["ન લાગ્યો", "quiet"], completed: ["પૂરો", "quiet"],
 };
-const REASON = { overdue: "મુદત વીતી", due_today: "આજે મુદત", retry: "ફરી પ્રયત્ન", promise_missed: "વાયદો ચૂક્યા" };
+const REASON = { overdue: "મુદત વીતી", due_today: "આજે મુદત", retry: "ફરી પ્રયત્ન", callback: "પછી ફોન કરવા કહ્યું", promise_missed: "વાયદો ચૂક્યા" };
 let callsTimer;
 let hours = null;
 
