@@ -12,8 +12,8 @@ import re
 from datetime import date, timedelta
 
 from ugharani import dates, extract, llm
-from ugharani.lang.gu import (CURRENCY, HALF, HANDING_OVER, NEVER, NEVER_PHRASES, OFFER, REST,  # noqa: F401
-                               SUFFIXES, WHOLE)
+from ugharani.lang.gu import (ASKS_DATE, CURRENCY, HALF, HANDING_OVER, NEVER, NEVER_PHRASES,  # noqa: F401
+                               OFFER, OWNER_CALLS_HI, REST, SUFFIXES, WHOLE)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -90,7 +90,10 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     # ("₹1,20,000 માંથી ₹50,000 કાલે")
     whole = (balance in named or bool(WHOLE.search(text))) and not any(0 < n < balance for n in named)
     in_parts = _in_parts(text, history, balance)
+    asking = "?" in text and bool(ASKS_DATE.search(text))
     for start, until in dates.spans(text, today):
+        if asking and until == dates.OPEN:
+            continue  # "દિવાળી પછી કઈ તારીખે?": asking for a day, not agreeing to "whenever"
         if until > split_by:
             return f"she was about to agree to {until.isoformat()}, past the {settings['split_days']}-day limit: {text}"
         # A range like "આવતા અઠવાડિયે" that starts in time can still be narrowed to a day in it,
@@ -172,6 +175,8 @@ async def audit(lines: list[str], strict: bool = False) -> list[str]:
     return found
 
 
-def instead(settings: dict, customer: dict) -> str:
-    """What she says in place of a sentence that broke a rule."""
+def instead(settings: dict, customer: dict, hindi: bool = False) -> str:
+    """What she says in place of a sentence that broke a rule (in Hindi to a Hindi speaker)."""
+    if hindi:
+        return OWNER_CALLS_HI.format(owner=settings["owner_name"])
     return f"એ બાબતે હું {settings['owner_name']}ને વાત કરી દઉં છું, એ તમને ફોન કરશે."

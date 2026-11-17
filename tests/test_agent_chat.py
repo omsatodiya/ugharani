@@ -53,6 +53,12 @@ def test_a_bad_call_is_caught(bad, want):
     assert any(want in p for p in found), found
 
 
+def test_a_hindi_reply_to_a_persona_that_drifted_into_hindi_passes():
+    drifted = GOOD[:3] + [("customer", "હાં ઠીક હૈ, અગલે સોમવાર કો ભેજ દુંગા."),
+                          ("agent", "જી, ઠીક હૈ. તો સોમવાર કો ₹1,20,000, ઠીક હૈ ના?")] + GOOD[5:]
+    assert not any("in Hindi" in p for p in chat.problems(call(drifted)))
+
+
 def test_allowed_stops_pass():
     stopped = call(GOOD, scenario="english", stops=["she was about to talk about discount: 3% ઓછા"])
     assert chat.problems(stopped) == []

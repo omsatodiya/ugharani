@@ -246,7 +246,7 @@ async def reply(settings: dict, customer: dict, history: list[dict], today: date
                 last_call: dict | None = None) -> tuple[str, bool]:
     text, end = split_end(await llm.generate(*for_gemini(settings, customer, history, today, last_call)))
     if guard.problem(text, settings, customer, history, today):  # (a live call checks each sentence)
-        return guard.instead(settings, customer), False
+        return guard.instead(settings, customer, speaks_hindi(history)), False
     return text, end
 
 

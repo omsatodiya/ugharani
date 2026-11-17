@@ -208,7 +208,8 @@ def problems(call: dict) -> list[str]:
     for why in call["stops"]:
         if not any(why.startswith(f"she was about to {STOPS[k]}") for k in s.stops):
             out.append(f"checker stopped: {why}")
-    fixed = {*live.ACKS, *HINDI_ACKS, agent.HOLD, guard.instead(SETTINGS, {}), "આવજો.", "આભાર."}
+    fixed = {*live.ACKS, *HINDI_ACKS, agent.HOLD, guard.instead(SETTINGS, {}), guard.instead(SETTINGS, {}, True),
+             "આવજો.", "આભાર."}
     seen = set()
     for line in her(call):
         for sentence in _sentences(line):
@@ -222,7 +223,10 @@ def problems(call: dict) -> list[str]:
                 and CONFIRM.search(turns[i + 2]["text"])):
             out.append(f"confirmed again after a yes: {turns[i + 2]['text']}")
     replies = [t for t in her(call)[1:] if t not in fixed]
-    if s.language == GU and (hindi := [t for t in replies if agent.is_hindi(t)]):
+    # (a Gujarati persona may drift into Hindi: then a Hindi reply follows them, as it should)
+    turns_before = [(t["text"], turns[:i]) for i, t in enumerate(turns) if t["who"] == "agent" and i]
+    if s.language == GU and (hindi := [t for t, before in turns_before if t not in fixed
+                                       and agent.is_hindi(t) and not agent.speaks_hindi(before)]):
         out.append(f"answered a Gujarati speaker in Hindi: {hindi[0]}")
     if s.language == HI and replies and sum(agent.is_hindi(t) for t in replies) * 2 < len(replies):
         out.append(f"answered a Hindi speaker in Gujarati ({sum(agent.is_hindi(t) for t in replies)}/{len(replies)} Hindi)")

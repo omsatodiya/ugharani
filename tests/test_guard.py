@@ -255,3 +255,18 @@ def test_half_the_balance_may_be_said_once_they_offer_half():
     assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, half, today) is None
     plain = [{"who": "customer", "text": "દસ દિવસમાં થોડું આપીશ."}]
     assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, plain, today)
+
+
+def test_asking_which_day_after_a_festival_is_no_agreement():
+    assert check("જી. તો દિવાળી પછી એટલે કઈ તારીખે પેમેન્ટ આવી જશે?") is None
+    assert check("જી. તો દિવાળી કે બાદ કિસ તારીખ તક પેમેન્ટ હો જાએગા?") is None
+    assert check("તો દિવાળી પછી, બરાબર ને?")  # agreeing to "whenever after Diwali" is still stopped
+    assert check("દિવાળી પછી કઈ તારીખે? 25 તારીખે ચાલશે?")  # a day past the limit, even in a question
+
+
+def test_the_hand_over_line_follows_a_hindi_speaker():
+    from ugharani import agent
+    assert guard.instead(SETTINGS, CUSTOMER) == "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે."
+    hindi = guard.instead(SETTINGS, CUSTOMER, hindi=True)
+    assert "શેઠસે" in hindi and agent.is_hindi(hindi)
+    assert check(hindi) is None

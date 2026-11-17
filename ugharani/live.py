@@ -387,7 +387,8 @@ class LiveCall:
                         # of this reply is dropped (it would follow from what she didn't say).
                         log.warning("call: checker stopped a sentence: %s", why)
                         self.flags.append(why)
-                        text, hang = guard.instead(self.settings, self.customer), False
+                        hindi = agent.speaks_hindi(convo) or (self.heard_language or "").startswith("hi")
+                        text, hang = guard.instead(self.settings, self.customer, hindi), False
                         await ready.put((text, self._fetch(text)))
                         break
                     if after_lead_in:  # "...પોલીપ્લાસ્ટમાંથી. જી. તમારું..." would stutter
@@ -819,7 +820,7 @@ class LiveCall:
 async def warm_up(settings: dict, customer: dict) -> None:
     """Synthesise the opening and fixed lines while the phone rings, so answering is instant."""
     for text in [agent.greeting(customer), agent.intro(settings, True), agent.intro(settings, False),
-                 guard.instead(settings, customer), *FIXED_LINES]:
+                 guard.instead(settings, customer), guard.instead(settings, customer, True), *FIXED_LINES]:
         try:
             await speech.speak(text)
         except gnani.GnaniError as e:

@@ -28,7 +28,7 @@ def fixed_sentences() -> list[str]:
         openings = [agent.greeting(c) for c in followup.customers(conn)]
         for disclose in (True, False):  # (the owner may switch the disclosure off)
             openings += [agent.intro({**rules, "disclose_ai": disclose}, yes) for yes in (True, False)]
-        openings.append(guard.instead(rules, {}))
+        openings += [guard.instead(rules, {}), guard.instead(rules, {}, True)]
         conn.close()
     return [summary, reminders.summary_text([]), *speech.QUESTIONS.values(), *live.FIXED_LINES, *openings]
 

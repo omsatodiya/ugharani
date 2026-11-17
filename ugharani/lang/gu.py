@@ -89,6 +89,10 @@ CONFIRMED_NOW = ("[Note for you, not said by the customer: they have just said y
                  "Don't confirm again. Say a short thanks and goodbye now and end the call. If they asked "
                  "whether there was anything else, it is \"ના, બસ એટલું જ.\"]")
 # "અડધા હમણાં, અડધા સોમવારે": half the balance is an amount they named
+# She asks for a date ("દિવાળી પછી કઈ તારીખે?"): the open-ended "after X" in it is no agreement.
+ASKS_DATE = re.compile(r"કઈ\s*તારીખ|કયા\s*દિવસ|કયે\s*દિવસ|ક્યારે|કિસ\s*તારીખ|કૌન\s*સી\s*તારીખ|કબ\b|કબ\s*તક")
+# Her hand-over line to a Hindi speaker (guard.instead)
+OWNER_CALLS_HI = "ઇસ બારે મેં મૈં {owner}સે બાત કર લેતી હૂં, વો આપકો ફોન કરેંગે."
 HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
 
 
