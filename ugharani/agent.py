@@ -195,16 +195,17 @@ def asks_for_callback(text: str) -> bool:
 
 
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
-               last_call: dict | None = None) -> tuple[str, list[dict]]:
+               last_call: dict | None = None, heard_language: str | None = None) -> tuple[str, list[dict]]:
     """The system prompt and conversation for the agent's next reply.
 
     When the customer speaks Hindi or asks to be called back, a note goes on their latest turn (the
     end of the conversation weighs more than a rule deep in the prompt); the stored transcript is
-    not changed.
+    not changed. `heard_language`: the language Gnani judged their latest words to be in
+    (gnani.stt_languages); "hi-IN" means Hindi whatever the words say.
     """
     prompt = system_prompt(settings, customer, today, last_call)
     if history and history[-1]["who"] == "customer":
-        notes = [note for note, applies in ((HINDI_NOW, speaks_hindi(history)),
+        notes = [note for note, applies in ((HINDI_NOW, (heard_language or "").startswith("hi") or speaks_hindi(history)),
                                             (CALLBACK_NOW, asks_for_callback(history[-1]["text"]))) if applies]
         if notes:
             history = [*history[:-1], {"who": "customer", "text": "\n".join([history[-1]["text"], *notes])}]

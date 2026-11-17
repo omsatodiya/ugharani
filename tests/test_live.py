@@ -30,6 +30,10 @@ class FakeSTT:
         if pcm.startswith(b"SAY:"):
             await self.queue.put({"type": "speech_start"})
             await self.queue.put({"type": "transcript", "text": pcm[4:].decode()})
+        elif pcm.startswith(b"LANG:"):  # b"LANG:hi-IN:text": a transcript with Gnani's language
+            lang, text = pcm[5:].decode().split(":", 1)
+            await self.queue.put({"type": "speech_start"})
+            await self.queue.put({"type": "transcript", "text": text, "detected_language_code": lang})
         elif pcm.startswith(b"START"):
             await self.queue.put({"type": "speech_start"})
         elif pcm.startswith(b"TEXT:"):
@@ -996,6 +1000,33 @@ def test_ek_minute_gets_an_instant_ok_and_a_long_wait(phone, monkeypatch):
         say(ws, "હા, શુક્રવારે આપી દઈશ")
         until(ws, {"type": "end"})
     assert len(rec["histories"]) == 2  # the hold itself didn't go to Gemini
+
+
+def test_gnanis_language_for_their_words_is_followed(phone):
+    """With the language left to Gnani (STT_MULTI_LANGUAGE), it says which one it heard: Hindi in
+    words with no Hindi markers still gets a Hindi reply."""
+    client, call_id, rec = phone
+    rec["replies"] = ["જી. ₹1,00,000 બાકી હૈ, કબ તક આએગા?", "ઠીક હૈ. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી હૈ, કબ તક આએગા?"})
+        time.sleep(0.6)
+        ws.send_bytes("LANG:hi-IN:સોમવાર".encode())
+        until(ws, {"type": "end"})
+    assert not rec["histories"][0][-1]["text"].endswith(agent.HINDI_NOW)
+    assert rec["histories"][1][-1]["text"] == f"સોમવાર\n{agent.HINDI_NOW}"
+
+
+def test_stt_languages(monkeypatch):
+    monkeypatch.delenv("STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("STT_MULTI_LANGUAGE", raising=False)
+    assert gnani.stt_languages() == "gu-IN"  # (the default until measured)
+    monkeypatch.setenv("STT_MULTI_LANGUAGE", "1")
+    assert gnani.stt_languages() == "indic-auto"  # (a list is refused on the live endpoint)
+    assert gnani.live_headers()["language_code"] == "indic-auto"
+    monkeypatch.setenv("STT_LANGUAGE", "hi-IN")
+    assert gnani.stt_languages() == "hi-IN"  # (an explicit one wins)
 
 
 def test_asks_to_hold():

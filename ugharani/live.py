@@ -220,6 +220,7 @@ class LiveCall:
         self.pauses: list[str] = []  # how each pause ended: resumed / interrupted (logged, tested)
         self._cut_unheard: list[dict] | None = None  # set by an interruption for the reply being cut
         self.stt_events: dict[str, int] = {}  # what Gnani sent, counted (logged at the end)
+        self.heard_language: str | None = None  # Gnani's language for their latest words, if it says
 
     # ---------- speaking ----------
 
@@ -365,7 +366,8 @@ class LiveCall:
         filler = asyncio.create_task(self._filler_later())
         spoken: list[str] = []
         hang = False
-        system, convo = agent.for_gemini(self.settings, self.customer, self.history, self.today, self.last_call)
+        system, convo = agent.for_gemini(self.settings, self.customer, self.history, self.today, self.last_call,
+                                         self.heard_language)
         ready: asyncio.Queue = asyncio.Queue()  # (text, audio queue) in speaking order; None at the end
         if lead_in:
             ready.put_nowait((lead_in, self._fetch(lead_in)))
@@ -695,6 +697,7 @@ class LiveCall:
             self._last_heard = self._now()
             self._prompted = False
             self._hold_until = 0.0
+            self.heard_language = event.get("detected_language_code")
             self._add("customer", text)
             await self._send_event({"type": "line", "who": "customer", "text": text})
             if self._stage == "talk" and asks_to_hold(text):
