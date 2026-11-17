@@ -21,8 +21,20 @@ def settings(tmp_path):
 
 def test_the_opening_is_two_turns_like_a_person_calling(settings):
     assert agent.greeting(CUSTOMER) == "હેલો રમેશભાઈ?"  # (no comma: Timbre pauses at commas)
-    assert agent.intro(settings) == "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."
-    assert agent.intro(settings, answered_yes=False).startswith("નમસ્તે. હું કાવ્યા")
+    # (by default she says she's automatic)
+    assert agent.intro(settings) == "હા નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."
+    assert agent.intro(settings, answered_yes=False) == "નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."
+    assert "automatic assistant" in agent.system_prompt(settings, CUSTOMER, TODAY)
+
+
+def test_the_owner_can_switch_the_disclosure_off(settings, tmp_path):
+    from ugharani import db
+    conn = db.connect(str(tmp_path / "x.db"))
+    off = followup.update_settings(conn, {"disclose_ai": False})
+    assert off["disclose_ai"] is False
+    assert agent.intro(off) == "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."
+    assert "automatic assistant" not in agent.system_prompt(off, CUSTOMER, TODAY)
+    conn.close()
 
 
 def test_prompt_carries_dues_contacts_and_rules(settings):

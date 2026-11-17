@@ -19,6 +19,7 @@ DEFAULTS = {
     "products": "PVC, CPVC અને UPVC પાઇપ ફિટિંગ્સ, બ્રાસ ફિટિંગ્સ અને વાલ્વ",
     "agent_name": "કાવ્યા",         # who the agent says it is
     "owner_name": "શેઠ",             # how the agent refers to the owner
+    "disclose_ai": "1",             # her intro says she is the business's automatic assistant
     "remind_after_days": "0",       # first call this many days after the due date
     "repeat_every_days": "3",       # then again after this many days without payment
     "handover_amount": "200000",    # dues at or above this go to the owner after the call
@@ -33,7 +34,7 @@ DEFAULTS = {
     "holidays": "",                 # YYYY-MM-DD, comma separated: festival days, no calls
 }
 TYPES = {"remind_after_days": int, "repeat_every_days": int, "handover_amount": int, "auto_calls": bool,
-         "promise_days": int, "split_days": int, "call_on_sunday": bool}
+         "promise_days": int, "split_days": int, "call_on_sunday": bool, "disclose_ai": bool}
 TONES = {"gentle", "firm"}
 OUTCOMES = {"promised", "paid", "dispute", "callback", "handover", "refused", "unclear"}
 

@@ -14,8 +14,8 @@ from ugharani import agent, clock, gnani, guard, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
-INTRO = "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."
-INTRO_NO = "નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."  # after "કોણ?" etc.
+INTRO = "હા નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."
+INTRO_NO = "નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."  # after "કોણ?" etc.
 
 
 class FakeSTT:
@@ -1130,7 +1130,7 @@ def test_the_after_call_check_tells_the_owner_what_she_said(phone, monkeypatch):
     assert call["audit"] == ["supply: તમારી એક પણ લાઈન રવાના નહીં થાય."]
     assert call["flags"] == []  # (it was said: not something the checker stopped)
     assert GREETING not in asked[0] and "હા નમસ્તે." not in asked[0]  # fixed lines aren't sent,
-    assert "હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી." not in asked[0]  # sentence by sentence either
+    assert INTRO_NO.split(". ")[1] not in asked[0]  # sentence by sentence either
 
 
 def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monkeypatch):

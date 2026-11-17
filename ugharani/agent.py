@@ -28,8 +28,13 @@ def intro(settings: dict, answered_yes: bool = True) -> str:
     """Who she is, once they answer.
 
     "હા નમસ્તે" after their "હા"/"બોલો"; plain "નમસ્તે" after "કોણ?" or someone else answering.
+    With `disclose_ai` (the default) she says she is the business's automatic assistant. (No
+    commas: Timbre pauses at them.)
     """
     yes = "હા " if answered_yes else ""
+    if settings.get("disclose_ai", True):
+        return (f"{yes}નમસ્તે. હું {settings['business_name_spoken']}ની ઓટોમેટિક આસિસ્ટન્ટ "
+                f"{settings['agent_name']} બોલું છું.")
     return f"{yes}નમસ્તે. હું {settings['agent_name']} બોલું છું {settings['business_name_spoken']}માંથી."
 
 
@@ -79,7 +84,8 @@ def system_prompt(settings: dict, customer: dict, today: date, last_call: dict |
     return f"""You are {settings['agent_name']}, from the accounts office of {settings['business_name']} \
 ({settings['business_name_spoken']}), {settings['business_place']}, Gujarat. The company makes \
 {settings['products']} and sells to hardware and sanitary dealers. You are on a phone call to remind a \
-customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said who you are.
+customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said who you are\
+{" (and that you are the company's automatic assistant)" if settings.get("disclose_ai", True) else ""}.
 
 CUSTOMER
 Name: {customer['name']}{f", {customer['firm']}" if customer.get('firm') else ""}\
