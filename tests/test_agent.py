@@ -72,6 +72,46 @@ def test_notes_are_cleaned(settings, monkeypatch):
     assert out["summary"] == "શનિવારે 60,000 RTGS" and out["promised_date"] is None
 
 
+def _notes(monkeypatch, settings, said: list[tuple[str, str]], **wrote):
+    import asyncio
+
+    async def fake(system, history, schema):
+        return {"outcome": "promised", "summary": "વાયદો", "owner_action": None, **wrote}
+    monkeypatch.setattr(llm, "generate_json", fake)
+    history = [{"who": who, "text": text} for who, text in said]
+    return asyncio.run(agent.notes(settings, CUSTOMER, history, date(2026, 11, 4)))  # a Wednesday
+
+
+def test_notes_keep_what_was_said_in_the_call(settings, monkeypatch):
+    out = _notes(monkeypatch, settings, [("customer", "શનિવારે 60 હજાર મોકલી દઈશ."),
+                                         ("agent", "તો શનિવારે ₹60,000, બરાબર ને?"), ("customer", "હા.")],
+                 promised_amount=60000, promised_date="2026-11-07")
+    assert (out["promised_amount"], out["promised_date"], out["checks"]) == (60000, "2026-11-07", [])
+    # the whole balance, a range's day, half, "today"
+    out = _notes(monkeypatch, settings, [("customer", "આવતા અઠવાડિયે બધું આપી દઈશ.")],
+                 promised_amount=120000, promised_date="2026-11-09")
+    assert out["checks"] == [] and out["promised_date"] == "2026-11-09"
+    out = _notes(monkeypatch, settings, [("customer", "અડધા કાલે, અડધા સોમવારે.")],
+                 promised_amount=60000, promised_date="2026-11-05")
+    assert out["checks"] == [] and out["promised_amount"] == 60000
+    out = _notes(monkeypatch, settings, [("customer", "હમણાં જ RTGS કરું છું.")],
+                 promised_amount=120000, promised_date="2026-11-04")
+    assert out["checks"] == []
+
+
+def test_notes_not_backed_by_the_call_go_to_the_owner(settings, monkeypatch):
+    out = _notes(monkeypatch, settings, [("customer", "શનિવારે 60 હજાર મોકલી દઈશ.")],
+                 promised_amount=70000, promised_date="2026-11-25", owner_action="સ્ટેટમેન્ટ મોકલવું")
+    assert out["promised_amount"] is None and out["promised_date"] is None  # (no false promise holds calls back)
+    assert out["checks"] == ["નોંધ તપાસો: ₹70,000 ની રકમ ફોનમાં સંભળાઈ નથી.",
+                             "નોંધ તપાસો: વાયદાની તારીખ 25 નવેમ્બર ફોનમાં સંભળાઈ નથી."]
+    assert out["owner_action"] == " ".join(["સ્ટેટમેન્ટ મોકલવું", *out["checks"]])
+    # a payment already made: its (past) date isn't a promise to check
+    out = _notes(monkeypatch, settings, [("customer", "મેં તો 30 ઑક્ટોબરે ₹1,20,000 NEFT કરી દીધા.")],
+                 outcome="paid", promised_amount=120000, promised_date="2026-10-30")
+    assert out["checks"] == [] and out["promised_date"] == "2026-10-30"
+
+
 def test_hindi_is_recognised_even_in_gujarati_script(settings):
     from ugharani import agent as a
     said = lambda text: [{"who": "agent", "text": "..."}, {"who": "customer", "text": text}]

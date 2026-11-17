@@ -8,7 +8,7 @@ and writes down what was agreed.
 
 from datetime import date, timedelta
 
-from ugharani import guard, llm
+from ugharani import dates, guard, llm
 from ugharani.followup import OUTCOMES
 from ugharani.lang.gu import (BUSY, CALL_VERB, CALLBACK_NOW, GUJARATI_WORDS, HINDI_NOW, HINDI_WORDS,  # noqa: F401
                               LATER, WEEKDAYS)
@@ -272,6 +272,36 @@ summary: what happened, in plain Gujarati, as an office staff member would note 
 owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time they asked for (or someone else who answered asked for) goes here too, e.g. "સાંજે ફરી ફોન કરવો"."""
 
 
+NOW = ("હમણાં", "હમણા", "અત્યારે", "અભી", "अभी", "હાલ", "આજે", "આજ")
+HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
+
+
+def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> list[str]:
+    """Gemini's promise checked against the call itself: a date someone said (as `dates.py` reads
+    it) and an amount someone said, the balance, half of it, or what is left after a part. An
+    unsupported value is dropped (a false promise would hold back the follow-up calls); what the
+    owner should check is returned."""
+    checks = []
+    lines = [h["text"] for h in history]
+    if out.get("promised_amount"):
+        balance, amount = customer["balance"], out["promised_amount"]
+        heard = set().union(*(guard._numbers(line) for line in lines), set())
+        ok = {balance, *heard, *(balance - n for n in heard if 0 < n < balance)}
+        if any(w in line for line in lines for w in HALF):
+            ok.add(balance // 2)
+        if amount not in ok:
+            checks.append(f"નોંધ તપાસો: {rupees(amount)} ની રકમ ફોનમાં સંભળાઈ નથી.")
+            out["promised_amount"] = None
+    if out.get("promised_date") and out.get("outcome") == "promised":  # (a paid date is in the past)
+        when = date.fromisoformat(out["promised_date"])
+        spans = [span for line in lines for span in dates.spans(line, today)]
+        said_now = when == today and any(w in line for line in lines for w in NOW)
+        if not said_now and not any(start <= when <= until for start, until in spans):
+            checks.append(f"નોંધ તપાસો: વાયદાની તારીખ {spoken_date(when)} ફોનમાં સંભળાઈ નથી.")
+            out["promised_date"] = None
+    return checks
+
+
 async def notes(settings: dict, customer: dict, history: list[dict], today: date) -> dict:
     lines = "\n".join(f"{'Agent' if h['who'] == 'agent' else 'Customer'}: {h['text']}" for h in history)
     out = await llm.generate_json(notes_prompt(settings, customer, today),
@@ -286,4 +316,11 @@ async def notes(settings: dict, customer: dict, history: list[dict], today: date
             date.fromisoformat(out["promised_date"])
         except ValueError:
             out["promised_date"] = None
+    amount = out.get("promised_amount")
+    if isinstance(amount, float) and amount.is_integer():
+        amount = int(amount)
+    out["promised_amount"] = amount if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0 else None
+    out["checks"] = check_notes(out, customer, history, today)
+    if out["checks"]:  # the owner's to-do says what to look at
+        out["owner_action"] = " ".join(filter(None, [out.get("owner_action"), *out["checks"]]))
     return out
