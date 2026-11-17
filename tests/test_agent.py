@@ -139,6 +139,7 @@ def test_hindi_is_recognised_even_in_gujarati_script(settings):
     "એની સાથ વાત કરી લેજો.",
     "હાં, નહીં, જી.",
     "બીસ દિન બાદ પેમેન્ટ કરી દેજો.",        # mixed, a Gujarati verb: stays Gujarati
+    "નમસ્તે, હા બોલિએ.",                   # polite Gujarati (found by the conversation suite)
 ])
 def test_words_gujarati_shares_with_hindi_are_no_sign_of_hindi(text):
     said = [{"who": "agent", "text": "..."}, {"who": "customer", "text": text}]

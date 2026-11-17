@@ -65,12 +65,13 @@ CALLBACK_NOW = ("[Note for you, not said by the customer: they are asking to be 
 # Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
 # Gujarati and answer in Gujarati. These words tell the two apart: each is said in one language
 # only. Not here, because Gujarati says them too: "પર" ("WhatsApp પર"), "કા"/"કી" (Kathiyawadi
-# "કાં"), "તક" (a chance), "સાથ", "ઠીક" ("ઠીક છે"), "હમ" (a listening noise), "હાં", "નહીં", "જી".
+# "કાં"), "તક" (a chance), "સાથ", "ઠીક" ("ઠીક છે"), "હમ" (a listening noise), "હાં", "નહીં", "જી",
+# "બોલિએ" (a polite "હા બોલિએ" in Gujarati too).
 HINDI_WORDS = {"હૈ", "હૈં", "હોગા", "હોગી", "જાએગા", "જાયેગા", "જાએંગે", "જાયેંગે", "કો", "અભી", "અગલે", "અગલા",
                "કબ", "ક્યા", "ક્યોં", "મૈં", "હમારા", "હમારે", "હમને", "મુઝે", "આપકા", "આપકો", "કુછ", "ઔર",
                "દૂંગા", "દુંગા", "દેંગે", "દેગા", "કરુંગા", "કરૂંગા", "કરેંગે", "કરના", "કરતે", "સકતે", "સકતા",
                "પાએગા", "પાએગી", "પાયેગા", "ભેજ", "ભેજૂંગા", "ભેજુંગા", "ભેજેંગે", "ભેજિએ", "દીજિએ", "કીજિએ",
-               "રહા", "ચલ", "બોલિએ", "બોલિયે", "લેકિન", "દેખતે", "દેખેંગે", "બાત", "દિન", "કલ", "શામ"}
+               "રહા", "ચલ", "લેકિન", "દેખતે", "દેખેંગે", "બાત", "દિન", "કલ", "શામ"}
 GUJARATI_WORDS = {"છે", "છું", "છો", "નથી", "તમે", "મને", "હું", "અમે", "મારે", "તમારું", "આવતા", "આવતી", "આવતે",
                   "મોકલી", "મોકલીશ", "મોકલું", "કરીશ", "કરું", "દઈશ", "દઉં", "આપું", "આપીશ", "જોઉં", "થઈ", "શું",
                   "કેમ", "હમણાં", "હમણા", "પછી", "ક્યારે", "જશે", "આવશે", "થશે", "હતું", "હતા", "હતી", "કાલે",
@@ -78,7 +79,10 @@ GUJARATI_WORDS = {"છે", "છું", "છો", "નથી", "તમે", "�
 
 HINDI_NOW = ("[Note for you, not said by the customer: they are speaking HINDI. Reply in simple, polite "
              "spoken Hindi (આપ, ભેજેંગે, કરેંગે), not Gujarati, still written in Gujarati script, e.g. "
-             "\"જી, ઠીક હૈ. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\"]")
+             "\"અચ્છા. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\" Start with \"જી.\", \"અચ્છા.\" or \"ઠીક હૈ.\", "
+             "not the same one every time, and only if it fits (not after a question like \"કોણ?\").]")
+# "અડધા હમણાં, અડધા સોમવારે": half the balance is an amount they named
+HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
 
 
 # ---------- the checker's words (guard.py) ----------

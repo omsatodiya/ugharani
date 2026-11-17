@@ -10,8 +10,8 @@ from datetime import date, timedelta
 
 from ugharani import dates, guard, llm
 from ugharani.followup import OUTCOMES
-from ugharani.lang.gu import (BUSY, CALL_VERB, CALLBACK_NOW, GUJARATI_WORDS, HINDI_NOW, HINDI_WORDS,  # noqa: F401
-                              LATER, WEEKDAYS)
+from ugharani.lang.gu import (BUSY, CALL_VERB, CALLBACK_NOW, GUJARATI_WORDS, HALF, HINDI_NOW,  # noqa: F401
+                              HINDI_WORDS, LATER, WEEKDAYS)
 from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
@@ -273,7 +273,6 @@ owner_action: only if the owner or the person they deal with must do something, 
 
 
 NOW = ("હમણાં", "હમણા", "અત્યારે", "અભી", "अभी", "હાલ", "આજે", "આજ")
-HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
 
 
 def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> list[str]:

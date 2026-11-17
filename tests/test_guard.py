@@ -245,3 +245,13 @@ def test_part_payments_need_money_said_not_any_number():
     history = [{"who": "agent", "text": "₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે."}]
     assert guard.problem("તો 18 તારીખે પેમેન્ટ કરી દેશો ને?", SETTINGS, CUSTOMER, history, TODAY)
     assert check("તો 18 તારીખે, બરાબર ને?", said=["અત્યારે 50,000 મોકલું"]) is None
+
+
+def test_half_the_balance_may_be_said_once_they_offer_half():
+    settings = {"owner_name": "શેઠ", "promise_days": 7, "split_days": 15}
+    customer = {"name": "રમેશભાઈ", "balance": 120000, "bills": [{"amount": 50000}, {"amount": 70000}]}
+    today = date(2026, 11, 4)
+    half = [{"who": "customer", "text": "અડધું પેમેન્ટ દસ દિવસમાં આપું અને બાકીનું 14 તારીખે."}]
+    assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, half, today) is None
+    plain = [{"who": "customer", "text": "દસ દિવસમાં થોડું આપીશ."}]
+    assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, plain, today)

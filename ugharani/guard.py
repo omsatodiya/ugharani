@@ -12,7 +12,7 @@ import re
 from datetime import date, timedelta
 
 from ugharani import dates, extract, llm
-from ugharani.lang.gu import (CURRENCY, HANDING_OVER, NEVER, NEVER_PHRASES, OFFER, REST,  # noqa: F401
+from ugharani.lang.gu import (CURRENCY, HALF, HANDING_OVER, NEVER, NEVER_PHRASES, OFFER, REST,  # noqa: F401
                                SUFFIXES, WHOLE)
 
 log = logging.getLogger("uvicorn.error")
@@ -74,6 +74,8 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     balance = customer["balance"]
     known = {balance, *(b["amount"] for b in customer.get("bills", []))}
     said = set().union(*(_numbers(h["text"]) for h in history if h["who"] == "customer"), set())
+    if any(w in h["text"] for h in history if h["who"] == "customer" for w in HALF):
+        said.add(balance // 2)  # "અડધું દસ દિવસમાં": she may say the half as ₹60,000
     known |= said | {balance - n for n in said if 0 < n < balance}
     known |= set().union(*(_amounts(h["text"]) for h in history if h["who"] == "agent"), set())
     for amount in _amounts(text):
