@@ -1022,6 +1022,7 @@ def test_gnanis_language_for_their_words_is_followed(phone):
 def test_stt_languages(monkeypatch):
     monkeypatch.delenv("STT_LANGUAGE", raising=False)
     monkeypatch.delenv("STT_MULTI_LANGUAGE", raising=False)
+    monkeypatch.setenv("GNANI_API_KEY", "test-key")  # (CI has no .env)
     assert gnani.stt_languages() == "gu-IN"  # (the default until measured)
     monkeypatch.setenv("STT_MULTI_LANGUAGE", "1")
     assert gnani.stt_languages() == "indic-auto"  # (a list is refused on the live endpoint)
