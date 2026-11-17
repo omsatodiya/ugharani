@@ -166,19 +166,26 @@ and end that message with {END}. The goodbye message never contains a question. 
 # ---------- which language the customer speaks ----------
 
 
-def speaks_hindi(history: list[dict]) -> bool:
-    """Does the customer speak Hindi? Judged on their last two turns, so a switch is followed."""
-    turns = [h["text"] for h in history if h["who"] == "customer"][-2:]
+def language_words(text: str) -> tuple[int, int]:
+    """(Hindi, Gujarati) marker words in `text`: Devanagari counts as Hindi."""
     hindi = gujarati = 0
-    for word in " ".join(turns).replace("।", " ").split():
+    for word in text.replace("।", " ").split():
         word = word.strip(".,?!")
-        if any("ऀ" <= ch <= "ॿ" for ch in word):  # Devanagari
-            hindi += 1
-        elif word in HINDI_WORDS - {"નહીં", "જી", "હાં"}:  # (these are said in Gujarati too)
+        if any("ऀ" <= ch <= "ॿ" for ch in word) or word in HINDI_WORDS:
             hindi += 1
         elif word in GUJARATI_WORDS:
             gujarati += 1
+    return hindi, gujarati
+
+
+def is_hindi(text: str) -> bool:
+    hindi, gujarati = language_words(text)
     return hindi > gujarati
+
+
+def speaks_hindi(history: list[dict]) -> bool:
+    """Does the customer speak Hindi? Judged on their last two turns, so a switch is followed."""
+    return is_hindi(" ".join([h["text"] for h in history if h["who"] == "customer"][-2:]))
 
 
 def asks_for_callback(text: str) -> bool:

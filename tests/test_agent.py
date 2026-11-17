@@ -68,12 +68,29 @@ def test_hindi_is_recognised_even_in_gujarati_script(settings):
     assert a.speaks_hindi(said("બાકી કા મહીને કે આખિર તક કર દૂંગા."))
     assert not a.speaks_hindi(said("હમણાં થોડી તંગી છે, આવતા સોમવારે 50,000 મોકલી દઈશ."))
     assert not a.speaks_hindi(said("હા બોલો."))
+    assert a.speaks_hindi(said("ઠીક હૈ, દસ તારીખ કો ભેજ દેંગે."))
+    assert a.speaks_hindi(said("કલ શામ કો કર દૂંગા."))
+    assert a.speaks_hindi(said("હમારા પેમેન્ટ અભી ચલ રહા હૈ."))
 
     customer = {"name": "રમેશભાઈ", "balance": 100000, "earliest_due": "2026-11-01"}
     _, convo = a.for_gemini(settings, customer, said("બાકી કા મહીને કે આખિર તક કર દૂંગા."), date(2026, 11, 3))
     assert convo[-1]["text"].endswith(a.HINDI_NOW)  # the note rides on their latest turn
     _, convo = a.for_gemini(settings, customer, said("હા બોલો."), date(2026, 11, 3))
     assert convo[-1]["text"] == "હા બોલો."
+
+
+@pytest.mark.parametrize("text", [
+    "WhatsApp પર statement મોકલો.",       # "પર": Gujarati too
+    "ઠીક, બોલો.",                          # "ઠીક છે" is Gujarati
+    "હમ, તક મળે તો આપી દઈશ.",
+    "કાં તો શનિવારે, કા સોમવારે.",          # Kathiyawadi "or"
+    "એની સાથ વાત કરી લેજો.",
+    "હાં, નહીં, જી.",
+    "બીસ દિન બાદ પેમેન્ટ કરી દેજો.",        # mixed, a Gujarati verb: stays Gujarati
+])
+def test_words_gujarati_shares_with_hindi_are_no_sign_of_hindi(text):
+    said = [{"who": "agent", "text": "..."}, {"who": "customer", "text": text}]
+    assert not agent.speaks_hindi(said), text
 
 
 def test_a_call_back_is_told_apart_from_a_hold_and_noted_for_gemini(settings):
