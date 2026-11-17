@@ -161,7 +161,7 @@ script, which Gemini understands. To verify with real audio:
 
 ## Conversation correctness (Phase 2, Nov 17)
 
-The Gujarati words all live in `ugharani/lang/gu.py` now: her fixed lines, the listening noises,
+The conversation's Gujarati word lists live in `ugharani/lang/gu.py` now: her fixed lines, the listening noises,
 hold and call-back words, the Hindi and Gujarati marker words, and the checker's lists. Another
 language will be a sibling file.
 
@@ -200,8 +200,9 @@ Sent back through Gnani, the disclosed clips transcribe as the same words.
 the call:
 - The promised date must fall in a span `dates.py` reads from a line of the call, or be today
   when someone said "હમણાં" or "આજે".
-- The amount must be one someone said, the balance, half of it (when "અડધા" was said), or what is
-  left after a part.
+- The amount must be one someone said (not a day: "25 તારીખે" is no ₹25), the balance, half of it
+  (when half the money was offered, not "અડધા કલાકમાં"), or what is left after a part.
+- An open end ("દિવાળી પછી") backs no date: any later day would pass.
 
 Anything else is dropped, since a false promise would hold back the follow-up calls. The owner's
 to-do then gets "નોંધ તપાસો: …".
@@ -216,7 +217,7 @@ in a day:
 | Run (Nov 17-18) | Result | Found and fixed |
 |---|---|---|
 | all 20, first pass | 13/17 pass, 3 cut off by 503s | "હા બોલિએ" counted as Hindi; "જી, ઠીક હૈ." repeated; half the balance stopped though the customer offered half; a second confirmation after a yes |
-| the 7 that failed, again | 5/7 | the collect check was too strict; the last two above |
+| the 7 that didn't pass (4 failed, 3 cut off), again | 5/7 | the collect check was too strict; the last two above |
 | 3 × 20 | 5/8 pass, then the daily quota (429) | "દિવાળી પછી કઈ તારીખે?" stopped as agreeing to "whenever"; the hand-over line was Gujarati to a Hindi speaker; the suite called a Hindi reply wrong when a Gujarati persona had switched to Hindi |
 
 Exit codes: 0 all pass, 1 a failure, 2 cut off (no failure, but some calls didn't finish).

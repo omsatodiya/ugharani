@@ -246,8 +246,9 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 
 #### Phase 2 design (agreed before building, 2026-11-17)
 
-- **2.1 One home for the Gujarati words.** `ugharani/lang/gu.py` holds every phrase list the
-  conversation code matches or says: her fixed lines (fillers, acknowledgements, "હેલો?", goodbyes),
+- **2.1 One home for the Gujarati words.** `ugharani/lang/gu.py` holds the phrase lists the
+  conversation code matches or says (the prompt's wording and the date and number readers stay
+  where they are): her fixed lines (fillers, acknowledgements, "હેલો?", goodbyes),
   the listening noises and yeses, the hold words, the Hindi/Gujarati marker words, and the checker's
   word and phrase lists. `live.py`, `agent.py` and `guard.py` import them under their old names, so
   the tests pass unchanged: the proof that nothing moved but the words. The number and date readers
@@ -269,7 +270,8 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
   "કરું", "દઉં", "હતું"). One function scores a text, used for the customer and, in the suite,
   for her replies.
 - **2.4 Gnani's own language, behind a switch.** `STT_MULTI_LANGUAGE=1` (default off) opens live
-  STT with `language_code: gu-IN,hi-IN,en-IN`. Gnani then writes Hindi in Devanagari and reports
+  STT with `language_code: indic-auto` (built, the live endpoint refused a list like
+  `gu-IN,hi-IN,en-IN`: "exactly one locale is required"). Gnani then writes Hindi in Devanagari and reports
   `detected_language_code` per utterance (judged from the text's script). The call keeps the latest
   turn's code; `hi-IN` means Hindi, otherwise the word count decides as before. Off until Phase 3
   measures Gujarati transcripts with it (the checker and number reader read Gujarati script).
