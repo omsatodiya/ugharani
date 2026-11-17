@@ -163,3 +163,17 @@ def test_a_call_back_is_told_apart_from_a_hold_and_noted_for_gemini(settings):
     hindi = [{"who": "agent", "text": "..."}, {"who": "customer", "text": "અભી બાત નહીં હો પાએગી, શામ કો ફોન કરના"}]
     _, convo = agent.for_gemini(settings, customer, hindi, date(2026, 11, 3))
     assert convo[-1]["text"].endswith(f"{agent.HINDI_NOW}\n{agent.CALLBACK_NOW}")
+
+
+def test_a_yes_to_her_confirmation_gets_a_goodbye_note(settings):
+    customer = {"name": "રમેશભાઈ", "balance": 120000, "earliest_due": "2026-11-01"}
+    asked = {"who": "agent", "text": "સારું. તો ચેક ₹1,20,000 નો છે, અને શુક્રવારે કુરિયર કરાવી દેશો, બરાબર ને?"}
+    for yes in ["હા, બરાબર છે. બીજું કંઈ કામ હતું?", "હા.", "જી", "पाक्का", "ઠીક છે"]:
+        _, convo = agent.for_gemini(settings, customer, [asked, {"who": "customer", "text": yes}], TODAY)
+        assert convo[-1]["text"].endswith(agent.CONFIRMED_NOW) == (yes != "पाक्का"), yes
+    for not_yes in ["ના, શનિવારે.", "એક મિનિટ"]:
+        _, convo = agent.for_gemini(settings, customer, [asked, {"who": "customer", "text": not_yes}], TODAY)
+        assert agent.CONFIRMED_NOW not in convo[-1]["text"]
+    question = {"who": "agent", "text": "₹1,20,000 બાકી છે, ક્યારે મોકલશો?"}  # (not a confirmation)
+    _, convo = agent.for_gemini(settings, customer, [question, {"who": "customer", "text": "હા, શુક્રવારે."}], TODAY)
+    assert agent.CONFIRMED_NOW not in convo[-1]["text"]

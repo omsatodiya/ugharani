@@ -81,6 +81,13 @@ HINDI_NOW = ("[Note for you, not said by the customer: they are speaking HINDI. 
              "spoken Hindi (આપ, ભેજેંગે, કરેંગે), not Gujarati, still written in Gujarati script, e.g. "
              "\"અચ્છા. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\" Start with \"જી.\", \"અચ્છા.\" or \"ઠીક હૈ.\", "
              "not the same one every time, and only if it fits (not after a question like \"કોણ?\").]")
+# Her confirmation ("તો શુક્રવારે ₹1,20,000 RTGS, બરાબર ને?") and a yes to it ("હા, બરાબર છે.")
+CONFIRM = re.compile(r"(?:બરાબર|ઠીક|સાચું|સહી)\s*(?:છે\s*|હૈ\s*)?(?:ને|ના|न|ના\s*જી)\s*\?")
+AGREED = ("હા", "હાં", "જી", "ઠીક", "બરાબર", "હો", "ok", "ઓકે", "ચોક્કસ", "ભલે", "પાક્કું", "હાજી",
+          "हाँ", "हां", "जी", "ठीक")
+CONFIRMED_NOW = ("[Note for you, not said by the customer: they have just said yes to your confirmation. "
+                 "Don't confirm again. Say a short thanks and goodbye now and end the call. If they asked "
+                 "whether there was anything else, it is \"ના, બસ એટલું જ.\"]")
 # "અડધા હમણાં, અડધા સોમવારે": half the balance is an amount they named
 HALF = ("અડધા", "અડધું", "અડધી", "આધા", "આધે", "आधा", "आधे")
 

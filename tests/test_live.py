@@ -698,7 +698,8 @@ def test_ha_said_as_she_finishes_a_question_is_its_answer(phone):
         say(ws, "હા")
         events, _ = until(ws, {"type": "end"})
     assert "clear" not in [e["type"] for e in events]  # no need to stop her
-    assert rec["histories"][-1][-1] == {"who": "customer", "text": "હા"}  # answered, not ignored
+    # answered, not ignored (a yes to her confirmation: Gemini is told to say goodbye)
+    assert rec["histories"][-1][-1] == {"who": "customer", "text": f"હા\n{agent.CONFIRMED_NOW}"}
 
 
 def test_long_pauses_inside_her_speech_are_shortened():

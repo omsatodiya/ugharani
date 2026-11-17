@@ -10,8 +10,8 @@ from datetime import date, timedelta
 
 from ugharani import dates, guard, llm
 from ugharani.followup import OUTCOMES
-from ugharani.lang.gu import (BUSY, CALL_VERB, CALLBACK_NOW, GUJARATI_WORDS, HALF, HINDI_NOW,  # noqa: F401
-                              HINDI_WORDS, LATER, WEEKDAYS)
+from ugharani.lang.gu import (AGREED, BUSY, CALL_VERB, CALLBACK_NOW, CONFIRM, CONFIRMED_NOW,  # noqa: F401
+                              GUJARATI_WORDS, HALF, HINDI_NOW, HINDI_WORDS, LATER, WEEKDAYS)
 from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
@@ -200,11 +200,20 @@ def asks_for_callback(text: str) -> bool:
     return bool(CALL_VERB.search(text) and LATER.search(text)) or bool(BUSY.search(text))
 
 
+def said_yes_to_confirmation(history: list[dict]) -> bool:
+    """Her last turn asked to confirm ("..., બરાબર ને?") and they said yes ("હા, બરાબર છે.")."""
+    if len(history) < 2 or history[-2]["who"] != "agent" or history[-1]["who"] != "customer":
+        return False
+    first = history[-1]["text"].strip().split(" ")[0].strip(".,!?।") if history[-1]["text"].strip() else ""
+    return bool(CONFIRM.search(history[-2]["text"])) and first in AGREED
+
+
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
                last_call: dict | None = None, heard_language: str | None = None) -> tuple[str, list[dict]]:
     """The system prompt and conversation for the agent's next reply.
 
-    When the customer speaks Hindi or asks to be called back, a note goes on their latest turn (the
+    When the customer speaks Hindi, asks to be called back or has just said yes to her
+    confirmation, a note goes on their latest turn (the
     end of the conversation weighs more than a rule deep in the prompt); the stored transcript is
     not changed. `heard_language`: the language Gnani judged their latest words to be in
     (gnani.stt_languages); "hi-IN" means Hindi whatever the words say.
@@ -212,7 +221,8 @@ def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
     prompt = system_prompt(settings, customer, today, last_call)
     if history and history[-1]["who"] == "customer":
         notes = [note for note, applies in ((HINDI_NOW, (heard_language or "").startswith("hi") or speaks_hindi(history)),
-                                            (CALLBACK_NOW, asks_for_callback(history[-1]["text"]))) if applies]
+                                            (CALLBACK_NOW, asks_for_callback(history[-1]["text"])),
+                                            (CONFIRMED_NOW, said_yes_to_confirmation(history))) if applies]
         if notes:
             history = [*history[:-1], {"who": "customer", "text": "\n".join([history[-1]["text"], *notes])}]
     return prompt, [dict(h) for h in history]  # a snapshot: the call goes on while Gemini writes
