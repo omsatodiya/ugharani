@@ -219,6 +219,7 @@ in a day:
 | all 20, first pass | 13/17 pass, 3 cut off by 503s | "હા બોલિએ" counted as Hindi; "જી, ઠીક હૈ." repeated; half the balance stopped though the customer offered half; a second confirmation after a yes |
 | the 7 that didn't pass (4 failed, 3 cut off), again | 5/7 | the collect check was too strict; the last two above |
 | 3 × 20 | 5/8 pass, then the daily quota (429) | "દિવાળી પછી કઈ તારીખે?" stopped as agreeing to "whenever"; the hand-over line was Gujarati to a Hindi speaker; the suite called a Hindi reply wrong when a Gujarati persona had switched to Hindi |
+| all 20 after those fixes and the review fixes (Nov 18) | **20/20 pass** | none |
 
 Exit codes: 0 all pass, 1 a failure, 2 cut off (no failure, but some calls didn't finish).
 
