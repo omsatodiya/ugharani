@@ -12,61 +12,17 @@ import re
 from datetime import date, timedelta
 
 from ugharani import dates, extract, llm
+from ugharani.lang.gu import (ASKS_DATE, CURRENCY, HALF, HALF_OFFER, HANDING_OVER, NEVER,  # noqa: F401
+                               NEVER_PHRASES, OFFER, OWNER_CALLS_HI, REST, SUFFIXES, WHOLE)
 
 log = logging.getLogger("uvicorn.error")
 
-# Things she never brings up (the owner decides them, or they're never said at all). Matched on
-# words, so "ભાવ" in "ભાવનગર" doesn't count.
-NEVER = {
-    "discount": ["ડિસ્કાઉન્ટ", "discount", "છૂટ", "છૂટછાટ", "કસર", "કમિશન", "રાહત"],
-    "interest or penalty": ["વ્યાજ", "interest", "ઇન્ટરેસ્ટ", "પેનલ્ટી", "penalty", "દંડ", "ચાર્જ", "ચાર્જીસ",
-                            "ફી", "fee", "સરચાર્જ"],
-    "legal threat": ["કોર્ટ", "court", "વકીલ", "કેસ", "લીગલ", "legal", "નોટિસ", "notice", "પોલીસ", "શાખ", "આબરૂ", "બદનામી", "ઇજ્જત", "ઈજ્જત"],
-    "stopping supply": ["સપ્લાય બંધ", "માલ બંધ", "ઓર્ડર બંધ", "બ્લોક", "block", "બ્લેકલિસ્ટ", "blacklist"],
-    "rate": ["ભાવ", "rate", "રેટ", "કિંમત", "પ્રાઇસ", "પ્રાઈસ", "price", "એમઆરપી", "mrp"],
-}
-# Phrases, not single words: "ઓછું કરી આપીશું" (we'll reduce it), "માફ કરી દઈશું" (we'll waive it,
-# but "માફ કરજો" is "sorry"), any percentage but 100 ("સો ટકા" is "definitely"); supply held,
-# stopped or cancelled ("ઓર્ડર નહીં મળે", "ટ્રક રોકી દીધી", "ડિલિવરી ... બંધ"); a name spoiled.
-_NUMBER_WORD = "(?:" + "|".join(sorted((w for w, v in extract.NUMBER_WORDS.items()
-                                        if isinstance(v, int) and v < 100 and not w.isascii()), key=len, reverse=True)) + ")"
-NEVER_PHRASES = {
-    "discount": re.compile(
-        r"(?<![\d.])(?!100\b)\d{1,2}(?:\.\d+)?\s*(?:%|ટકા|પર્સન્ટ|percent)"
-        r"|" + _NUMBER_WORD + r"\s*(?:%|ટકા|પર્સન્ટ)"
-        r"|(?<![઀-૿])(?:ઓછ[ુંાીો]+|કમ)\s+(?:કરી|કર|આપ|ભર|ચૂકવ|ચુકવ|લઈ|લે|દે|ચાલશે|ગણ|રકમ|પૈસા|રૂપિયા)"
-        r"|વેવ\s*કર|waive|રાઉન્ડ\s*ઓફ|round\s*off|સેટલ\s*કર|settle"
-        r"|કાપી\s*(?:ને|લ|દ|આપ)|બાદ\s*(?:કરી|કર)\s*(?:દ|આપ|લ)|જતું\s*કર"
-        r"|માફ\s*(?:પણ\s*)?(?:કરી\s*(?:દ|શક|આપ)|કરીશ|કરીએ|કર\s*દ|થઈ\s*જ|થશે|હો\s*જ)"),
-    "stopping supply": re.compile(
-        r"(?:ઓર્ડર|માલ|સામાન|સપ્લાય|ડિલિવરી|ડિસ્પેચ|બુકિંગ|ડીલરશીપ|ડીલરશિપ|લાયસન્સ|ગાડી|ટ્રક|પાઇપ|પાઈપ"
-        r"|order|supply|delivery|booking|dealership)[^.?!।]{0,40}?"
-        r"(?:બંધ|રોક|અટકાવ|હોલ્ડ|hold|કેન્સલ|cancel|સસ્પેન્ડ|suspend|રદ|કાપ|(?:નહીં|નહિ|નઈ|नहीं)\s*"
-        r"(?:મળે|મળશે|આપ|મોકલ|આવે|મિલ|ભેજ|નીકળે|ઉપડે|થાય|થશે|જાય|થવા|રવાના|અનલોડ|લોડ|ડિસ્પેચ))"
-        r"|(?:પેમેન્ટ|પૈસા)[^.?!।]{0,30}(?:પછી|વિના|વગર)\s*(?:જ\s*)?[^.?!।]{0,30}"
-        r"(?:ડિસ્પેચ|રવાના|લોડ|મોકલ|નીકળ|ઉપડ)"),  # "પેમેન્ટ આવે પછી જ રવાના થશે"
-    "legal threat": re.compile(r"કાયદ|ફરિયાદ\s*(?:નોંધાવ|કરવી|કરીશ|કરશું|દાખલ)"
-                               r"|(?:પોલિસ|પુલિસ)(?:માં|ને|નો|ની|થી)?(?![઀-૿])|નામ[઀-૿]*\s+(?:\S+\s+)?(?:ખરાબ|બગાડ)|બગાડ[^.?!।]{0,12}(?:નામ|શાખ)"
-                               r"|સંબંધ[઀-૿]*\s+(?:\S+\s+)?(?:પૂરા|તોડ|બંધ|ખતમ)"),
-}
-# She offers something herself ("...લઈ લઈશું", "કરી આપીશું", "ચાલશે"): not a hand-over, even if
-# the owner is named in the same sentence.
-OFFER = re.compile(r"ઈશું|ીશું|ઈશ\b|આપશું|કરશું|ચાલશે|દઈએ|લઈએ|દેંગે|કર દેંગે")
 # Topics the owner may discuss, so she may say the owner will call about them. Threats and
 # stopping supply are never said, handed over or not.
 HANDED_OVER_TOPICS = {"discount", "interest or penalty", "rate"}
-# A sentence that hands the topic over ("ડિસ્કાઉન્ટ બાબતે શેઠ તમને ફોન કરશે") may name it. (A false
-# block here costs little: she says the standard hand-over line instead.)
-HANDING_OVER = re.compile(
-    r"ફોન કરશે|ફોન કરી લેશે|વાત કરી લેજો|વાત કરશે|વાત કરી લેશે|કૉલ કરશે|કોલ કરશે|ફોન જોડ|ચર્ચા કરી લેજો"
-    r"|નક્કી કરશે|નક્કી કરે|નક્કી કરજો|વાત કરાવ|વાત કરવી|ફોન કરજો|વાત મુકીશ|જ કહેશે|જણાવશે|જણાવીશ|જણાવું|નિર્ણય લેશે|સત્તા નથી|बात कर|फोन कर|ફોન કરેંગે|બાત કર")
 
 AMOUNT = re.compile(r"₹\s?([\d,]+)|([\d,]+)\s*(?:રૂપિયા|રૂ\.|રૂ\b|/-|rupees|rs\b)"
                     r"|(?<![\d,])(\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?![\d,])")  # "1,50,000", "100,000"
-CURRENCY = ("રૂપિય", "રૂ", "rupee")
-
-
-SUFFIXES = ("", "માં", "મા", "નો", "ના", "ની", "નું", "ને", "થી", "નુ", "વાળા", "વાળું", "ે", "ો", "s")
 
 
 def _is(word: str, term: str) -> bool:
@@ -93,10 +49,20 @@ def _amounts(text: str) -> set[int]:
     return found
 
 
+DAY_WORDS = ("તારીખ", "tarikh", "तारीख", *dates.MONTH_NAMES)  # (and "તા." alone)
+
+
+def _is_day_word(token: str) -> bool:
+    token = token.replace("ઑ", "ઓ")  # ("ઑક્ટોબર", "ઓક્ટોબર")
+    return token == "તા" or token.startswith(DAY_WORDS)
+
+
 def _numbers(text: str) -> set[int]:
-    """Any amounts the customer said: "50,000", "₹50,000", "60 હજાર", "દોઢ લાખ"."""
+    """Any amounts the customer said: "50,000", "₹50,000", "60 હજાર", "દોઢ લાખ"; not a day of the
+    month ("25 તારીખે", "18 નવેમ્બરે")."""
     tokens = [t.lower() for t in extract._TOKEN.findall(text)]
-    return {round(value) for value, _, _ in extract._number_groups(tokens)}
+    return {round(value) for value, _, end in extract._number_groups(tokens)
+            if not (end < len(tokens) and _is_day_word(tokens[end]))}
 
 
 def problem(text: str, settings: dict, customer: dict, history: list[dict], today: date) -> str | None:
@@ -118,6 +84,8 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     balance = customer["balance"]
     known = {balance, *(b["amount"] for b in customer.get("bills", []))}
     said = set().union(*(_numbers(h["text"]) for h in history if h["who"] == "customer"), set())
+    if any(HALF_OFFER.search(h["text"]) for h in history if h["who"] == "customer"):
+        said.add(balance // 2)  # "અડધું દસ દિવસમાં": she may say the half as ₹60,000
     known |= said | {balance - n for n in said if 0 < n < balance}
     known |= set().union(*(_amounts(h["text"]) for h in history if h["who"] == "agent"), set())
     for amount in _amounts(text):
@@ -132,7 +100,15 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     # ("₹1,20,000 માંથી ₹50,000 કાલે")
     whole = (balance in named or bool(WHOLE.search(text))) and not any(0 < n < balance for n in named)
     in_parts = _in_parts(text, history, balance)
+    # "દિવાળી પછી કઈ તારીખે?" asks for a day; it doesn't agree to "whenever after Diwali". Only
+    # when the open-ended date is in the asking clause ("દિવાળી પછી ચાલશે, કઈ તારીખે ફોન કરું?" agrees).
+    clauses = [c for c in re.split(r"[,.!?।]", text) if c.strip()]
+    stated = " ".join(c for c in clauses if not ASKS_DATE.search(c))
+    asking = "?" in text and len(stated) < len(" ".join(clauses))
+    open_stated = any(until == dates.OPEN for _, until in dates.spans(stated, today))
     for start, until in dates.spans(text, today):
+        if asking and until == dates.OPEN and not open_stated:
+            continue
         if until > split_by:
             return f"she was about to agree to {until.isoformat()}, past the {settings['split_days']}-day limit: {text}"
         # A range like "આવતા અઠવાડિયે" that starts in time can still be narrowed to a day in it,
@@ -143,17 +119,13 @@ def problem(text: str, settings: dict, customer: dict, history: list[dict], toda
     return None
 
 
-REST = ("બાકીના", "બાકીનું", "બાકીનો", "બાકીની", "અડધા", "અડધું", "હપ્તા", "હપ્તે", "હપ્તો")
-WHOLE = re.compile(r"પૂરા|પુરા|પૂરેપૂરા|પૂરું|આખું|આખી|આખા|સંપૂર્ણ|બધા\s*પૈસા|બધું\s*પેમેન્ટ|કુલ|ટોટલ|total|full")
-
-
 def _in_parts(text: str, history: list[dict], balance: int) -> bool:
     """Is a part payment being talked about: an amount below the balance, or "the rest"?
 
     Only money ("₹50,000", "50 હજાર", "50,000"), not any number ("UTR 4528", "18 તારીખે"); and not
     her mention of a bill ("₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે"), which is no payment plan."""
     for line, earlier in [(text, False), *((h["text"], h["who"] == "agent") for h in history)]:
-        if any(w in line for w in REST):
+        if any(w in line for w in REST) or HALF_OFFER.search(line):
             return True
         if earlier and "બિલ" in line:  # (her earlier mention of a bill; this sentence's plan counts)
             continue
@@ -218,6 +190,8 @@ async def audit(lines: list[str], strict: bool = False) -> list[str]:
     return found
 
 
-def instead(settings: dict, customer: dict) -> str:
-    """What she says in place of a sentence that broke a rule."""
+def instead(settings: dict, customer: dict, hindi: bool = False) -> str:
+    """What she says in place of a sentence that broke a rule (in Hindi to a Hindi speaker)."""
+    if hindi:
+        return OWNER_CALLS_HI.format(owner=settings["owner_name"])
     return f"એ બાબતે હું {settings['owner_name']}ને વાત કરી દઉં છું, એ તમને ફોન કરશે."

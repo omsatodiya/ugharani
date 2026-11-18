@@ -26,7 +26,9 @@ def fixed_sentences() -> list[str]:
         rules = followup.get_settings(conn)
         # how each sample customer's call starts: "હેલો રમેશભાઈ?", then the intro (after a yes, or not)
         openings = [agent.greeting(c) for c in followup.customers(conn)]
-        openings += [agent.intro(rules, True), agent.intro(rules, False), guard.instead(rules, {})]
+        for disclose in (True, False):  # (the owner may switch the disclosure off)
+            openings += [agent.intro({**rules, "disclose_ai": disclose}, yes) for yes in (True, False)]
+        openings += [guard.instead(rules, {}), guard.instead(rules, {}, True)]
         conn.close()
     return [summary, reminders.summary_text([]), *speech.QUESTIONS.values(), *live.FIXED_LINES, *openings]
 

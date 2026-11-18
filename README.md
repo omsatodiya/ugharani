@@ -137,7 +137,7 @@ through a phone-line filter. A filler covers a slow reply; long silence gets "рк
 goodbye; the transcript is saved when the call ends. `MAX_LIVE_CALLS` (default 2) caps calls at once.
 
 ```bash
-uv run python scripts/agent_chat.py promise          # typed conversations, Gemini only (free)
+uv run python scripts/agent_chat.py --runs 1         # the conversation suite, Gemini only (free): pass/fail
 uv run python scripts/fake_voice_server.py           # phone page with Gnani faked (free): tests the audio path
 uv run python scripts/live_call.py                   # a real call, a 2nd Timbre voice as the customer (credits)
 ```

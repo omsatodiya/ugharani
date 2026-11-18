@@ -244,6 +244,59 @@ merged to `main` once CI is green. Each step leaves `uv run pytest` green.
 - 2.6 Notes checked in code against the transcript.
 - 2.7 `scripts/agent_chat.py` → pass/fail suite with code checks; new scenarios.
 
+#### Phase 2 design (agreed before building, 2026-11-17)
+
+- **2.1 One home for the Gujarati words.** `ugharani/lang/gu.py` holds the phrase lists the
+  conversation code matches or says (the prompt's wording and the date and number readers stay
+  where they are): her fixed lines (fillers, acknowledgements, "હેલો?", goodbyes),
+  the listening noises and yeses, the hold words, the Hindi/Gujarati marker words, and the checker's
+  word and phrase lists. `live.py`, `agent.py` and `guard.py` import them under their old names, so
+  the tests pass unchanged: the proof that nothing moved but the words. The number and date readers
+  (`extract.py`, `dates.py`) are already Gujarati-only modules and stay where they are.
+- **2.2 Hold or call back.** Today "બે મિનિટ પછી ફોન કરો" matches the hold words ("બે મિનિટ"), so she
+  says "હા જી, વાંધો નહીં." and waits a minute in silence on a line the customer has left. Now:
+  - `asks_for_callback()`: "પછી ફોન કરો/કરજો", "થોડી વાર પછી ફોન", "સાંજે ફોન કરજો", "હું સામેથી ફોન
+    કરું", Hindi "बाद में फोन करो", "busy છું". It wins over the hold words.
+  - A call-back goes to Gemini with a note on the turn (as Hindi does): it is a call-back, not a
+    hold; if they said when, say she'll call then and say goodbye; if not, ask once when.
+  - More hold words: "જરા રાહ જુઓ", "રાહ જોજો", "એક સેકન્ડ હં", "ફોન/લાઈન ચાલુ રાખો", "લાઈન પર
+    રહો", "બસ એક મિનિટ", "रुकिए". ("ચાલુ રાખો" alone can mean "go on talking": only with ફોન/લાઈન.)
+  - After the call: a `callback` outcome is called again the next day instead of after
+    `repeat_every_days`, and the time they asked for goes into the owner's to-do. (A same-day
+    call-back at a set minute needs a scheduler; Phase 6 with the phone lines.)
+- **2.3 Hindi without false alarms.** Drop the marker words Gujarati uses too: "પર" ("WhatsApp
+  પર"), "કી", "કા" (Kathiyawadi "કાં"), "તક", "સાથ", "ઠીક" ("ઠીક છે"), "હમ" (a listening noise).
+  Add Hindi-only forms ("દીજિએ", "કીજિએ", "જાએંગે", "દેખતે") and Gujarati-only ones ("આવશે",
+  "કરું", "દઉં", "હતું"). One function scores a text, used for the customer and, in the suite,
+  for her replies.
+- **2.4 Gnani's own language, behind a switch.** `STT_MULTI_LANGUAGE=1` (default off) opens live
+  STT with `language_code: indic-auto` (built, the live endpoint refused a list like
+  `gu-IN,hi-IN,en-IN`: "exactly one locale is required"). Gnani then writes Hindi in Devanagari and reports
+  `detected_language_code` per utterance (judged from the text's script). The call keeps the latest
+  turn's code; `hi-IN` means Hindi, otherwise the word count decides as before. Off until Phase 3
+  measures Gujarati transcripts with it (the checker and number reader read Gujarati script).
+- **2.5 Saying she's automatic.** Owner setting `disclose_ai`, on by default, a switch under
+  "Kavya's rules". On: "હા નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."
+  (no commas: Timbre pauses at them). Off: today's intro. The prompt is told which was said. Both
+  intros are bundled as clips.
+- **2.6 Notes checked against the call.** After Gemini writes the notes, code checks the promised
+  date (inside a span `dates.py` reads from some line of the call) and amount (said by someone in
+  the call, or the balance). An unsupported value is dropped (a false promise would stop the
+  follow-up calls) and the owner's to-do says what the notes claimed: "please check".
+- **2.7 The conversation suite.** `scripts/agent_chat.py` runs each scenario N times (default 3)
+  with Gemini as the customer, on a pinned date (Wednesday 4 November 2026, Diwali on the 8th),
+  and checks in code:
+  - the checker stopped nothing, or only what the scenario allows (a discount ask, a long date)
+  - no sentence of hers said twice (acknowledgements aside)
+  - after a yes to her confirmation, no second confirmation
+  - her language matches the customer's (Hindi scenario: Hindi; the others: never Hindi)
+  - the call ends within 10 turns
+  - the notes have the expected outcome and pass the 2.6 check
+  - a hold is answered as a live call would, with the fixed line and no Gemini request
+  New scenarios: call-back, "દિવાળી પછી", half now half next month, "તમારો માણસ આવીને લઈ જાય",
+  bounced cheque, "UPI નંબર આપો", Kathiyawadi, Hinglish. Exit 0 pass, 1 fail, 2 incomplete
+  (Gemini unavailable). The free tier limits how often it can run in a day.
+
 ### Phase 3 — `phase-3-hearing`
 - 3.1 Recording page `/record.html` + prompt list + saving clips with expected text, behind the
   owner's key, with the consent screen and deletion.

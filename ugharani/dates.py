@@ -68,8 +68,15 @@ FESTIVAL_AFTER_WORD = {  # two words: (first, stem of the second)
 DATE_SUFFIXES = ("એ", "ે", "માં", "મા")  # "દિવાળીએ", "હોળીમાં" ("દિવાળીના દિવસે" below)
 
 
+# Devanagari ("अगले सोमवार", "15 तारीख तक", Gnani's Hindi) read in Gujarati script: the letters
+# map one to one, 0x180 apart; digits to 0-9, and the nukta ("फ़") dropped.
+DEVANAGARI = {**{c: c + 0x180 for c in range(0x0901, 0x0964) if c != 0x093C},
+              **{0x0966 + i: ord("0") + i for i in range(10)}, 0x093C: None}
+
+
 def _plain(text: str) -> str:
-    return text.lower().replace("ઑ", "ઓ")  # "ઑક્ટોબર" and "ઓક્ટોબર" are both written
+    # "ઑક્ટોબર" and "ઓક્ટોબર" are both written
+    return text.translate(DEVANAGARI).lower().replace("ઑ", "ઓ")
 
 
 MONTH_NAMES = [_plain(m) for m in MONTHS]
@@ -79,7 +86,7 @@ DAY_MONTH = re.compile(r"(\d{1,2})\s*(" + "|".join(m[:3] for m in MONTH_NAMES) +
 
 DAY_WORD = re.compile(r"([઀-૿]+)(?=\s*(?:તારીખ|" + "|".join(m[:3] for m in MONTH_NAMES) + r"))")
 # Said with no date at all: "ગમે ત્યારે આપજો", "નિરાંતે", "તમારી અનુકૂળતા મુજબ": no end
-WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|कभी\s*भी")
+WHENEVER = re.compile(r"ગમે\s*ત્યારે|ફાવે\s*ત્યારે|થાય\s*ત્યારે|અનુકૂળતા|અનુકુળતા|સગવડ|નિરાંતે|જબ\s*ભી|કભી\s*ભી")  # (Devanagari "कभी भी" arrives as "કભી ભી")
 
 
 ORDINALS = {"પહેલી": 1, "બીજી": 2, "ત્રીજી": 3, "ચોથી": 4, "છઠ્ઠી": 6}  # then "પાંચમી", "પંદરમી": Nમી

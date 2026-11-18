@@ -245,3 +245,44 @@ def test_part_payments_need_money_said_not_any_number():
     history = [{"who": "agent", "text": "₹50,000 વાળું બિલ 20 ઑક્ટોબરનું છે."}]
     assert guard.problem("તો 18 તારીખે પેમેન્ટ કરી દેશો ને?", SETTINGS, CUSTOMER, history, TODAY)
     assert check("તો 18 તારીખે, બરાબર ને?", said=["અત્યારે 50,000 મોકલું"]) is None
+
+
+def test_half_the_balance_may_be_said_once_they_offer_half():
+    settings = {"owner_name": "શેઠ", "promise_days": 7, "split_days": 15}
+    customer = {"name": "રમેશભાઈ", "balance": 120000, "bills": [{"amount": 50000}, {"amount": 70000}]}
+    today = date(2026, 11, 4)
+    half = [{"who": "customer", "text": "અડધું પેમેન્ટ દસ દિવસમાં આપું અને બાકીનું 14 તારીખે."}]
+    assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, half, today) is None
+    plain = [{"who": "customer", "text": "દસ દિવસમાં થોડું આપીશ."}]
+    assert guard.problem("તો 14 નવેમ્બરે ₹60,000, બરાબર ને?", settings, customer, plain, today)
+
+
+def test_asking_which_day_after_a_festival_is_no_agreement():
+    assert check("જી. તો દિવાળી પછી એટલે કઈ તારીખે પેમેન્ટ આવી જશે?") is None
+    assert check("જી. તો દિવાળી કે બાદ કિસ તારીખ તક પેમેન્ટ હો જાએગા?") is None
+    assert check("તો દિવાળી પછી, બરાબર ને?")  # agreeing to "whenever after Diwali" is still stopped
+    assert check("દિવાળી પછી કઈ તારીખે? 25 તારીખે ચાલશે?")  # a day past the limit, even in a question
+
+
+def test_the_hand_over_line_follows_a_hindi_speaker():
+    from ugharani import agent
+    assert guard.instead(SETTINGS, CUSTOMER) == "એ બાબતે હું શેઠને વાત કરી દઉં છું, એ તમને ફોન કરશે."
+    hindi = guard.instead(SETTINGS, CUSTOMER, hindi=True)
+    assert "શેઠસે" in hindi and agent.is_hindi(hindi)
+    assert check(hindi) is None
+
+
+def test_half_the_balance_needs_an_offer_of_half_the_money():
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["અડધા કલાક પછી ફોન કરો"])  # half an hour
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["અડધી રકમ શુક્રવારે આપીશ"]) is None
+    assert check("તો અડધી રકમ 13 તારીખે, બરાબર ને?") is None  # a part may run to split_days
+
+
+def test_a_date_question_does_not_cover_an_open_date_agreed_beside_it():
+    assert check("દિવાળી પછી પેમેન્ટ ચાલશે, કઈ તારીખે ફોન કરું?")
+
+
+def test_a_day_of_the_month_is_no_amount_said():
+    assert check("તો ₹1,19,990 10 તારીખે, બરાબર ને?", said=["10 તારીખે આપીશ"])  # (balance - 10)
+    assert check("તો ₹1,19,990 10 તારીખે, બરાબર ને?", said=["10 ઑક્ટોબરનું બિલ છે"])
+    assert check("તો ₹60,000 શુક્રવારે, બરાબર ને?", said=["60 હજાર તાત્કાલિક આપું"]) is None  # not "તા."

@@ -159,12 +159,76 @@ script, which Gemini understands. To verify with real audio:
   voice)
 - if `gu-IN` garbles Hindi, try `indic-auto` and compare on the same audio
 
+## Conversation correctness (Phase 2, Nov 17)
+
+The conversation's Gujarati word lists live in `ugharani/lang/gu.py` now: her fixed lines, the listening noises,
+hold and call-back words, the Hindi and Gujarati marker words, and the checker's lists. Another
+language will be a sibling file.
+
+**Hold or call back.** "એક મિનિટ", "જરા રાહ જુઓ", "એક સેકન્ડ હં", "ફોન ચાલુ રાખો", "લાઈન પર રહો",
+"रुकिए" are a hold: the fixed "હા જી, વાંધો નહીં." and up to 60 s of quiet. "બે મિનિટ પછી ફોન કરો",
+"સાંજે ફોન કરજો", "હું સામેથી ફોન કરું", "busy છું", "અત્યારે ડ્રાઇવ કરું છું" are a call-back
+(`agent.asks_for_callback`). Before, "બે મિનિટ" made it a hold, and she waited on a line the
+customer had left. A call-back now goes to Gemini with a note on that turn: say she'll call
+then, or ask once when, then goodbye. The next automatic call is the next day (reason `callback`),
+not after `repeat_every_days`. The time they asked for goes into the owner's to-do. A call-back at
+a set minute the same day needs a scheduler, so it waits for Phase 6.
+
+**Hindi without false alarms.** Words Gujarati says too no longer count as Hindi: "પર" ("WhatsApp
+પર"), "કા"/"કી", "તક", "સાથ", "ઠીક" ("ઠીક છે"), "હમ". Re-checking ~575 generated sentences changed 8
+verdicts, all Gujarati sentences with "પર" that the old list had called Hindi.
+
+**Gnani's language.** Each live transcript carries `detected_language_code`, judged from the
+text's script. Her next reply follows a `hi-IN` even when the words carry no Hindi markers.
+`STT_MULTI_LANGUAGE=1` opens live STT with `indic-auto`: the live endpoint refuses a list like
+`gu-IN,hi-IN` ("exactly one locale is required"), though the docs show one. A first look on the 12
+cached customer clips (a Timbre voice):
+- `indic-auto` gave the same Gujarati as `gu-IN` on all 7 Gujarati lines, and wrote "UTR" where
+  `gu-IN` wrote "યુટીઆર".
+- Longer Hindi lines came back in Devanagari, marked `hi-IN`.
+- Short ones ("हाँ बोलिए", "हाँ ठीक है") came back as Gujarati either way.
+- Even `gu-IN` returned one Hindi line in Devanagari, marked `hi-IN`.
+
+It stays off until Phase 3 measures real voices.
+
+**Saying she's automatic.** The owner setting `disclose_ai` is on by default (a switch under
+Kavya's rules). On, the intro is "હા નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું
+છું."; off, it is the earlier "હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી.". Both are bundled clips.
+Sent back through Gnani, the disclosed clips transcribe as the same words.
+
+**Notes checked against the call.** `agent.check_notes` checks the notes Gemini writes against
+the call:
+- The promised date must fall in a span `dates.py` reads from a line of the call, or be today
+  when someone said "હમણાં" or "આજે".
+- The amount must be one someone said (not a day: "25 તારીખે" is no ₹25), the balance, half of it
+  (when half the money was offered, not "અડધા કલાકમાં"), or what is left after a part.
+- An open end ("દિવાળી પછી") backs no date: any later day would pass.
+
+Anything else is dropped, since a false promise would hold back the follow-up calls. The owner's
+to-do then gets "નોંધ તપાસો: …".
+
+**The conversation suite.** `scripts/agent_chat.py` plays 20 personas against her (Gemini as the
+customer) and checks each call in code: rule stops, repeated sentences, a confirmation repeated
+after a yes, the reply language, the call ending, and the notes' outcome and checks. Scenario
+checks cover account numbers, the owner's to-do, dues kept from a wrong person, no promise that
+someone will come to collect, and hold vs call-back. Gemini's free tier limits how many calls fit
+in a day:
+
+| Run (Nov 17-18) | Result | Found and fixed |
+|---|---|---|
+| all 20, first pass | 13/17 pass, 3 cut off by 503s | "હા બોલિએ" counted as Hindi; "જી, ઠીક હૈ." repeated; half the balance stopped though the customer offered half; a second confirmation after a yes |
+| the 7 that didn't pass (4 failed, 3 cut off), again | 5/7 | the collect check was too strict; the last two above |
+| 3 × 20 | 5/8 pass, then the daily quota (429) | "દિવાળી પછી કઈ તારીખે?" stopped as agreeing to "whenever"; the hand-over line was Gujarati to a Hindi speaker; the suite called a Hindi reply wrong when a Gujarati persona had switched to Hindi |
+| all 20 after those fixes and the review fixes (Nov 18) | **20/20 pass** | none |
+
+Exit codes: 0 all pass, 1 a failure, 2 cut off (no failure, but some calls didn't finish).
+
 ## Tests
 
 | Layer | How | Cost |
 |---|---|---|
 | unit / integration | `tests/test_live.py`: fake STT (scripted `speech_start` / transcripts), fake Timbre, fake Gemini, through the real websocket route | free |
-| wording | `scripts/agent_chat.py hindi …`: Gemini plays the customer | free (Gemini) |
+| conversations | `scripts/agent_chat.py [--runs 3]`: 20 personas, Gemini plays the customer, pass/fail checks in code (below) | free (Gemini) |
 | browser audio path | `scripts/fake_voice_server.py` + the phone page in Chrome | free |
 | real end to end | `scripts/live_call.py <scenario>`: a script is the phone; a 2nd Timbre voice is the customer; `ECHO=0.3` leaks the agent's audio back into the mic like a phone speaker | Gnani credits |
 

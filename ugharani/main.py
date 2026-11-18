@@ -436,7 +436,8 @@ async def _save_notes(call_id: int, rules: dict, customer: dict, history: list[d
 
 
 async def _save_audit(call_id: int, rules: dict, customer: dict, history: list[dict]) -> None:
-    fixed = {*live.FIXED_LINES, guard.instead(rules, customer), agent.greeting(customer),
+    fixed = {*live.FIXED_LINES, guard.instead(rules, customer), guard.instead(rules, customer, True),
+             agent.greeting(customer),
              agent.intro(rules, True), agent.intro(rules, False)}
     fixed |= {part for line in list(fixed) for part in live.SENTENCE_END.split(line)}  # (and their sentences)
     hers = [sentence for h in history if h["who"] == "agent"  # (a turn is kept as one line)

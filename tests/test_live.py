@@ -10,12 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ugharani import clock, gnani, guard, live, llm, main, speech
+from ugharani import agent, clock, gnani, guard, live, llm, main, speech
 
 LOUD = bytes([0, 16])  # one PCM16 sample of 4096: speech, not the silence the trimmer drops
 GREETING = "હેલો રમેશભાઈ?"
-INTRO = "હા નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."
-INTRO_NO = "નમસ્તે. હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી."  # after "કોણ?" etc.
+INTRO = "હા નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."
+INTRO_NO = "નમસ્તે. હું જીનિયસ પોલીપ્લાસ્ટની ઓટોમેટિક આસિસ્ટન્ટ કાવ્યા બોલું છું."  # after "કોણ?" etc.
 
 
 class FakeSTT:
@@ -30,6 +30,10 @@ class FakeSTT:
         if pcm.startswith(b"SAY:"):
             await self.queue.put({"type": "speech_start"})
             await self.queue.put({"type": "transcript", "text": pcm[4:].decode()})
+        elif pcm.startswith(b"LANG:"):  # b"LANG:hi-IN:text": a transcript with Gnani's language
+            lang, text = pcm[5:].decode().split(":", 1)
+            await self.queue.put({"type": "speech_start"})
+            await self.queue.put({"type": "transcript", "text": text, "detected_language_code": lang})
         elif pcm.startswith(b"START"):
             await self.queue.put({"type": "speech_start"})
         elif pcm.startswith(b"TEXT:"):
@@ -694,7 +698,8 @@ def test_ha_said_as_she_finishes_a_question_is_its_answer(phone):
         say(ws, "હા")
         events, _ = until(ws, {"type": "end"})
     assert "clear" not in [e["type"] for e in events]  # no need to stop her
-    assert rec["histories"][-1][-1] == {"who": "customer", "text": "હા"}  # answered, not ignored
+    # answered, not ignored (a yes to her confirmation: Gemini is told to say goodbye)
+    assert rec["histories"][-1][-1] == {"who": "customer", "text": f"હા\n{agent.CONFIRMED_NOW}"}
 
 
 def test_long_pauses_inside_her_speech_are_shortened():
@@ -998,11 +1003,64 @@ def test_ek_minute_gets_an_instant_ok_and_a_long_wait(phone, monkeypatch):
     assert len(rec["histories"]) == 2  # the hold itself didn't go to Gemini
 
 
+def test_gnanis_language_for_their_words_is_followed(phone):
+    """With the language left to Gnani (STT_MULTI_LANGUAGE), it says which one it heard: Hindi in
+    words with no Hindi markers still gets a Hindi reply."""
+    client, call_id, rec = phone
+    rec["replies"] = ["જી. ₹1,00,000 બાકી હૈ, કબ તક આએગા?", "ઠીક હૈ. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી હૈ, કબ તક આએગા?"})
+        time.sleep(0.6)
+        ws.send_bytes("LANG:hi-IN:સોમવાર".encode())
+        until(ws, {"type": "end"})
+    assert not rec["histories"][0][-1]["text"].endswith(agent.HINDI_NOW)
+    assert rec["histories"][1][-1]["text"] == f"સોમવાર\n{agent.HINDI_NOW}"
+
+
+def test_stt_languages(monkeypatch):
+    monkeypatch.delenv("STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("STT_MULTI_LANGUAGE", raising=False)
+    monkeypatch.setenv("GNANI_API_KEY", "test-key")  # (CI has no .env)
+    assert gnani.stt_languages() == "gu-IN"  # (the default until measured)
+    monkeypatch.setenv("STT_MULTI_LANGUAGE", "1")
+    assert gnani.stt_languages() == "indic-auto"  # (a list is refused on the live endpoint)
+    assert gnani.live_headers()["language_code"] == "indic-auto"
+    monkeypatch.setenv("STT_LANGUAGE", "hi-IN")
+    assert gnani.stt_languages() == "hi-IN"  # (an explicit one wins)
+
+
 def test_asks_to_hold():
-    for text in ["એક મિનિટ", "એક મિનીટ હં", "હોલ્ડ કરો", "ઊભા રહો", "एक मिनट", "એક મિનિટ, હું બિલ જોઈ લઉં"]:
+    for text in ["એક મિનિટ", "એક મિનીટ હં", "હોલ્ડ કરો", "ઊભા રહો", "एक मिनट", "એક મિનિટ, હું બિલ જોઈ લઉં",
+                 "જરા રાહ જુઓ", "રાહ જોજો હં", "એક સેકન્ડ હં", "ફોન ચાલુ રાખો", "લાઈન પર રહો", "બસ એક મિનિટ",
+                 "रुकिए", "એક મિનટ રુકિએ"]:
         assert live.asks_to_hold(text), text
-    for text in ["એક મહિનામાં આપીશ", "2 મિનિટ પહેલાં જ મોકલ્યા, એક મિનિટ પણ મોડું નહીં થાય એની ગેરંટી આપું છું", "ના"]:
+    for text in ["એક મહિનામાં આપીશ", "2 મિનિટ પહેલાં જ મોકલ્યા, એક મિનિટ પણ મોડું નહીં થાય એની ગેરંટી આપું છું", "ના",
+                 "ચાલુ રાખો",  # "go on"
+                 # call-backs: the line is about to go dead
+                 "બે મિનિટ પછી ફોન કરો", "એક મિનિટ, પછી ફોન કરજો", "દસ મિનિટ પછી ફોન કરજો ને"]:
         assert not live.asks_to_hold(text), text
+
+
+def test_call_me_later_is_a_call_back_not_a_hold(phone, monkeypatch):
+    """"બે મિનિટ પછી ફોન કરો" goes to Gemini, told it's a call-back; she doesn't sit silent on the line."""
+    client, call_id, rec = phone
+    monkeypatch.setattr(live, "HOLD_WAIT", 30.0)
+    rec["replies"] = ["જી. ₹1,00,000 બાકી છે, ક્યારે આવશે?", "સારું, હું બે મિનિટ પછી ફોન કરું છું. આવજો. <END>"]
+    with client.websocket_connect(f"/calls/{call_id}/live") as ws:
+        until(ws, {"who": "agent"})
+        say(ws, "હા બોલો")
+        until(ws, {"text": "₹1,00,000 બાકી છે, ક્યારે આવશે?"})
+        time.sleep(0.6)
+        say(ws, "બે મિનિટ પછી ફોન કરો")
+        until(ws, {"text": "સારું, હું બે મિનિટ પછી ફોન કરું છું."})
+        until(ws, {"type": "end"})
+    assert len(rec["histories"]) == 2
+    asked = rec["histories"][1][-1]["text"]
+    assert asked.startswith("બે મિનિટ પછી ફોન કરો") and agent.CALLBACK_NOW in asked
+    said = [h["text"] for h in client.get(f"/calls/{call_id}").json()["transcript"]]
+    assert agent.HOLD not in said
 
 
 def test_an_overloaded_model_falls_back_for_the_notes_too(monkeypatch):
@@ -1074,7 +1132,7 @@ def test_the_after_call_check_tells_the_owner_what_she_said(phone, monkeypatch):
     assert call["audit"] == ["supply: તમારી એક પણ લાઈન રવાના નહીં થાય."]
     assert call["flags"] == []  # (it was said: not something the checker stopped)
     assert GREETING not in asked[0] and "હા નમસ્તે." not in asked[0]  # fixed lines aren't sent,
-    assert "હું કાવ્યા બોલું છું જીનિયસ પોલીપ્લાસ્ટમાંથી." not in asked[0]  # sentence by sentence either
+    assert INTRO_NO.split(". ")[1] not in asked[0]  # sentence by sentence either
 
 
 def test_no_notes_when_nobody_answered_and_a_failure_keeps_the_call(phone, monkeypatch):

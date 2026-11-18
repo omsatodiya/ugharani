@@ -19,6 +19,7 @@ DEFAULTS = {
     "products": "PVC, CPVC અને UPVC પાઇપ ફિટિંગ્સ, બ્રાસ ફિટિંગ્સ અને વાલ્વ",
     "agent_name": "કાવ્યા",         # who the agent says it is
     "owner_name": "શેઠ",             # how the agent refers to the owner
+    "disclose_ai": "1",             # her intro says she is the business's automatic assistant
     "remind_after_days": "0",       # first call this many days after the due date
     "repeat_every_days": "3",       # then again after this many days without payment
     "handover_amount": "200000",    # dues at or above this go to the owner after the call
@@ -33,7 +34,7 @@ DEFAULTS = {
     "holidays": "",                 # YYYY-MM-DD, comma separated: festival days, no calls
 }
 TYPES = {"remind_after_days": int, "repeat_every_days": int, "handover_amount": int, "auto_calls": bool,
-         "promise_days": int, "split_days": int, "call_on_sunday": bool}
+         "promise_days": int, "split_days": int, "call_on_sunday": bool, "disclose_ai": bool}
 TONES = {"gentle", "firm"}
 OUTCOMES = {"promised", "paid", "dispute", "callback", "handover", "refused", "unclear"}
 
@@ -234,7 +235,7 @@ def to_call(conn: sqlite3.Connection, today: date) -> list[dict]:
 
     - first call `remind_after_days` after the oldest unpaid due date
     - while a promise is still in the future, wait; once it passes unpaid, call
-    - a call that didn't get through is retried the next day
+    - a call that didn't get through, or asked to be called later, is tried again the next day
     - otherwise call again every `repeat_every_days`
     - never: auto calls off (globally or for this customer), or the owner took it over
     """
@@ -257,6 +258,10 @@ def to_call(conn: sqlite3.Connection, today: date) -> list[dict]:
                 if (today - _call_day(last)).days < 1:
                     continue
                 reason = "retry"  # didn't get through: try again the next day
+            elif last["outcome"] == "callback":
+                if (today - _call_day(last)).days < 1:
+                    continue
+                reason = "callback"  # asked to be called later: the next day, not in a few days
             elif last["promised_date"]:
                 promised = date.fromisoformat(last["promised_date"])
                 if today <= promised:

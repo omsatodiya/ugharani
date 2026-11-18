@@ -6,15 +6,19 @@ the owner, sends questions she can't answer to whoever the customer deals with,
 and writes down what was agreed.
 """
 
+import re
 from datetime import date, timedelta
 
-from ugharani import guard, llm
+from ugharani import dates, guard, llm
 from ugharani.followup import OUTCOMES
+from ugharani.lang.gu import (AGREED, BUSY, CALL_VERB, CALLBACK_NOW, CONFIRM, CONFIRMED_NOW,  # noqa: F401
+                              GUJARATI_WORDS, HALF, HALF_OFFER, HINDI_NOW, HINDI_WORDS, LATER, NOT_QUITE, NOW,
+                              WEEKDAYS)
+from ugharani.lang.gu import HOLD_OK as HOLD
 from ugharani.reminders import spoken_date
 from ugharani.speech import rupees
 
 END = "<END>"  # the agent ends its last line with this to hang up
-WEEKDAYS = ["સોમવાર", "મંગળવાર", "બુધવાર", "ગુરુવાર", "શુક્રવાર", "શનિવાર", "રવિવાર"]
 
 
 def greeting(customer: dict) -> str:
@@ -26,8 +30,13 @@ def intro(settings: dict, answered_yes: bool = True) -> str:
     """Who she is, once they answer.
 
     "હા નમસ્તે" after their "હા"/"બોલો"; plain "નમસ્તે" after "કોણ?" or someone else answering.
+    With `disclose_ai` (the default) she says she is the business's automatic assistant. (No
+    commas: Timbre pauses at them.)
     """
     yes = "હા " if answered_yes else ""
+    if settings.get("disclose_ai", True):
+        return (f"{yes}નમસ્તે. હું {settings['business_name_spoken']}ની ઓટોમેટિક આસિસ્ટન્ટ "
+                f"{settings['agent_name']} બોલું છું.")
     return f"{yes}નમસ્તે. હું {settings['agent_name']} બોલું છું {settings['business_name_spoken']}માંથી."
 
 
@@ -60,9 +69,6 @@ def _bills_line(customer: dict) -> str:
     return f"\nOpen bills, oldest first (what is still unpaid of each): {listed}."
 
 
-HOLD = ("હા જી, વાંધો નહીં.")
-
-
 def system_prompt(settings: dict, customer: dict, today: date, last_call: dict | None = None) -> str:
     owner = settings["owner_name"]
     deals_with = customer.get("deals_with") or owner
@@ -80,7 +86,8 @@ def system_prompt(settings: dict, customer: dict, today: date, last_call: dict |
     return f"""You are {settings['agent_name']}, from the accounts office of {settings['business_name']} \
 ({settings['business_name_spoken']}), {settings['business_place']}, Gujarat. The company makes \
 {settings['products']} and sells to hardware and sanitary dealers. You are on a phone call to remind a \
-customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said who you are.
+customer about a pending payment ("ઉઘરાણી"). You have already greeted them and said who you are\
+{" (and that you are the company's automatic assistant)" if settings.get("disclose_ai", True) else ""}.
 
 CUSTOMER
 Name: {customer['name']}{f", {customer['firm']}" if customer.get('firm') else ""}\
@@ -143,7 +150,8 @@ decide. Note it and say {deals_with} will call them about it.
 "એ માટે તમે {deals_with} સાથે વાત કરી લેજો". Never invent facts, rates or amounts.
 7. Statement, ledger, bill copy, or bank details (account number, IFSC, UPI ID): "હું તમને WhatsApp પર મોકલાવી દઉં છું." Never say account numbers or bill numbers yourself. Which bill is pending: from the list above.
 8. "એક મિનિટ", "હોલ્ડ કરો", someone else at their door: say only "{HOLD}" and wait for them.
-   Busy or driving: ask when to call back, then end.
+   "બે મિનિટ પછી ફોન કરો", "પછી ફોન કરજો", busy or driving: a call-back, not a hold. If they said \
+when, say you'll pass it on (don't promise that time) and end; if not, ask once when suits them, then end.
    Someone else answered (son, staff, wife; "ના, એ બહાર છે"): the dues are private, never tell them the \
 amount or that a payment is pending. Say "સારું. તો {customer['name']}ને કહેજો ને કે \
 {settings['business_name_spoken']}માંથી ફોન હતો. એ ક્યારે મળશે?", then thank them and say goodbye \
@@ -165,46 +173,64 @@ and end that message with {END}. The goodbye message never contains a question. 
 
 # ---------- which language the customer speaks ----------
 
-# Gujarati speech recognition writes Hindi in Gujarati script, so Gemini tends to read it as
-# Gujarati and answer in Gujarati. These words tell the two apart (each is common in one only).
-HINDI_WORDS = {"હૈ", "હૈં", "હોગા", "હોગી", "જાએગા", "જાયેગા", "કો", "કા", "કી", "તક", "અભી", "અગલે", "અગલા",
-               "કબ", "ક્યા", "ક્યોં", "મૈં", "હમ", "દૂંગા", "દુંગા", "દેંગે", "દેગા", "કરુંગા", "કરૂંગા", "કરેંગે",
-               "ભેજ", "ભેજૂંગા", "ભેજુંગા", "ભેજેંગે", "રહા", "બોલિએ", "બોલિયે", "ઠીક", "લેકિન", "પર", "સાથ",
-               "હાં", "નહીં", "જી"}
-GUJARATI_WORDS = {"છે", "છું", "છો", "નથી", "તમે", "મને", "આવતા", "આવતી", "આવતે", "મોકલી", "મોકલીશ", "કરીશ",
-                  "દઈશ", "થઈ", "શું", "કેમ", "હમણાં", "હમણા", "પછી", "ક્યારે", "આપીશ", "જશે"}
+
+def language_words(text: str) -> tuple[int, int]:
+    """(Hindi, Gujarati) marker words in `text`: Devanagari counts as Hindi."""
+    hindi = gujarati = 0
+    for word in text.replace("।", " ").split():
+        word = word.strip(".,?!")
+        if any("ऀ" <= ch <= "ॿ" for ch in word) or word in HINDI_WORDS:
+            hindi += 1
+        elif word in GUJARATI_WORDS:
+            gujarati += 1
+    return hindi, gujarati
+
+
+def is_hindi(text: str) -> bool:
+    hindi, gujarati = language_words(text)
+    return hindi > gujarati
 
 
 def speaks_hindi(history: list[dict]) -> bool:
     """Does the customer speak Hindi? Judged on their last two turns, so a switch is followed."""
-    turns = [h["text"] for h in history if h["who"] == "customer"][-2:]
-    hindi = gujarati = 0
-    for word in " ".join(turns).replace("।", " ").split():
-        word = word.strip(".,?!")
-        if any("ऀ" <= ch <= "ॿ" for ch in word):  # Devanagari
-            hindi += 1
-        elif word in HINDI_WORDS - {"નહીં", "જી", "હાં"}:  # (these are said in Gujarati too)
-            hindi += 1
-        elif word in GUJARATI_WORDS:
-            gujarati += 1
-    return hindi > gujarati
+    return is_hindi(" ".join([h["text"] for h in history if h["who"] == "customer"][-2:]))
 
 
-HINDI_NOW = ("[Note for you, not said by the customer: they are speaking HINDI. Reply in simple, polite "
-             "spoken Hindi (આપ, ભેજેંગે, કરેંગે), not Gujarati, still written in Gujarati script, e.g. "
-             "\"જી, ઠીક હૈ. તો બાકી કા પેમેન્ટ કબ તક હો જાએગા?\"]")
+def asks_for_callback(text: str) -> bool:
+    """"બે મિનિટ પછી ફોન કરો", "સાંજે ફોન કરજો", "હું સામેથી ફોન કરું", "busy છું": call later.
+    (Not a hold: she would wait on a line they have left.)"""
+    return bool(CALL_VERB.search(text) and LATER.search(text)) or bool(BUSY.search(text))
+
+
+def said_yes_to_confirmation(history: list[dict]) -> bool:
+    """Her last turn asked to confirm ("..., બરાબર ને?") and they said yes ("હા, બરાબર છે.")."""
+    if len(history) < 2 or history[-2]["who"] != "agent" or history[-1]["who"] != "customer":
+        return False
+    words = [w.strip(".,!?।") for w in history[-1]["text"].split()]
+    words = [w for w in words if w]
+    # (not "હા, પણ શુક્રવારે નહીં" or "જી, ના"; nor "હા, 50,000 જ આપીશ", a new amount or date)
+    plain = (bool(words) and words[0] in AGREED and not NOT_QUITE & set(words)
+             and not re.search(r"[\d૦-૯]", history[-1]["text"]))
+    return bool(CONFIRM.search(history[-2]["text"])) and plain
 
 
 def for_gemini(settings: dict, customer: dict, history: list[dict], today: date,
-               last_call: dict | None = None) -> tuple[str, list[dict]]:
+               last_call: dict | None = None, heard_language: str | None = None) -> tuple[str, list[dict]]:
     """The system prompt and conversation for the agent's next reply.
 
-    When the customer speaks Hindi, a note goes on their latest turn (the end of the conversation
-    weighs more than a rule deep in the prompt); the stored transcript is not changed.
+    When the customer speaks Hindi, asks to be called back or has just said yes to her
+    confirmation, a note goes on their latest turn (the
+    end of the conversation weighs more than a rule deep in the prompt); the stored transcript is
+    not changed. `heard_language`: the language Gnani judged their latest words to be in
+    (gnani.stt_languages); "hi-IN" means Hindi whatever the words say.
     """
     prompt = system_prompt(settings, customer, today, last_call)
-    if history and history[-1]["who"] == "customer" and speaks_hindi(history):
-        history = [*history[:-1], {"who": "customer", "text": f"{history[-1]['text']}\n{HINDI_NOW}"}]
+    if history and history[-1]["who"] == "customer":
+        notes = [note for note, applies in ((HINDI_NOW, (heard_language or "").startswith("hi") or speaks_hindi(history)),
+                                            (CALLBACK_NOW, asks_for_callback(history[-1]["text"])),
+                                            (CONFIRMED_NOW, said_yes_to_confirmation(history))) if applies]
+        if notes:
+            history = [*history[:-1], {"who": "customer", "text": "\n".join([history[-1]["text"], *notes])}]
     return prompt, [dict(h) for h in history]  # a snapshot: the call goes on while Gemini writes
 
 
@@ -226,7 +252,7 @@ async def reply(settings: dict, customer: dict, history: list[dict], today: date
                 last_call: dict | None = None) -> tuple[str, bool]:
     text, end = split_end(await llm.generate(*for_gemini(settings, customer, history, today, last_call)))
     if guard.problem(text, settings, customer, history, today):  # (a live call checks each sentence)
-        return guard.instead(settings, customer), False
+        return guard.instead(settings, customer, speaks_hindi(history)), False
     return text, end
 
 
@@ -259,7 +285,35 @@ promised_amount: rupees they promised (or say they paid), else null; if paying i
 only, with its date (the summary mentions the rest). promised_date: resolve words like \
 "સોમવારે", "આવતા અઠવાડિયે" (take its Monday) or "15 તારીખે" to YYYY-MM-DD from today, else null.
 summary: what happened, in plain Gujarati, as an office staff member would note it. Digits 0-9 only.
-owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time asked by someone else who answered goes here too."""
+owner_action: only if the owner or the person they deal with must do something, e.g. call back about a discount or a longer date, settle a dispute, or send the statement / bill copy / bank details on WhatsApp when the agent promised it. A callback time they asked for (or someone else who answered asked for) goes here too, e.g. "સાંજે ફરી ફોન કરવો"."""
+
+
+def check_notes(out: dict, customer: dict, history: list[dict], today: date) -> list[str]:
+    """Gemini's promise checked against the call itself: a date someone said (as `dates.py` reads
+    it) and an amount someone said, the balance, half of it, or what is left after a part. An
+    unsupported value is dropped (a false promise would hold back the follow-up calls); what the
+    owner should check is returned."""
+    checks = []
+    lines = [h["text"] for h in history]
+    if out.get("promised_amount"):
+        balance, amount = customer["balance"], out["promised_amount"]
+        heard = set().union(*(guard._numbers(line) for line in lines), set())
+        ok = {balance, *heard, *(balance - n for n in heard if 0 < n < balance)}
+        if any(HALF_OFFER.search(line) for line in lines):
+            ok.add(balance // 2)
+        if amount not in ok:
+            checks.append(f"નોંધ તપાસો: {rupees(amount)} ની રકમ ફોનમાં સંભળાઈ નથી.")
+            out["promised_amount"] = None
+    if out.get("promised_date") and out.get("outcome") == "promised":  # (a paid date is in the past)
+        when = date.fromisoformat(out["promised_date"])
+        # (not "દિવાળી પછી": an open end would let any later date through)
+        spans = [span for line in lines for span in dates.spans(line, today) if span[1] != dates.OPEN]
+        words = {w for line in lines for w in re.findall(r"[\w઀-૿ऀ-ॿ]+", line)}  # (whole words: not "આજકાલ")
+        said_now = when == today and bool(words & set(NOW))
+        if not said_now and not any(start <= when <= until for start, until in spans):
+            checks.append(f"નોંધ તપાસો: વાયદાની તારીખ {spoken_date(when)} ફોનમાં સંભળાઈ નથી.")
+            out["promised_date"] = None
+    return checks
 
 
 async def notes(settings: dict, customer: dict, history: list[dict], today: date) -> dict:
@@ -276,4 +330,11 @@ async def notes(settings: dict, customer: dict, history: list[dict], today: date
             date.fromisoformat(out["promised_date"])
         except ValueError:
             out["promised_date"] = None
+    amount = out.get("promised_amount")
+    if isinstance(amount, float) and amount.is_integer():
+        amount = int(amount)
+    out["promised_amount"] = amount if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0 else None
+    out["checks"] = check_notes(out, customer, history, today)
+    if out["checks"]:  # the owner's to-do says what to look at
+        out["owner_action"] = " ".join(filter(None, [out.get("owner_action"), *out["checks"]]))
     return out

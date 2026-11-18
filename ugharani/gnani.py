@@ -215,14 +215,27 @@ class LiveSTT:
             log.warning("live STT closed: %s", e)
 
 
+# The live endpoint takes exactly one locale, or "indic-auto" (the model judges the language of
+# each utterance). A list ("gu-IN,hi-IN") is refused on streaming, whatever the docs say (Nov 2026).
+MULTI_LANGUAGE = "indic-auto"
+
+
+def stt_languages() -> str:
+    """Gujarati alone by default: Hindi and English words come back in Gujarati script, which the
+    checker, the number reader and Gemini all read. STT_MULTI_LANGUAGE=1: "indic-auto"; Hindi then
+    comes back in Devanagari, and each transcript says which language it judged
+    (detected_language_code). Off until measured on Gujarati speech (docs/plan.md, Phase 3)."""
+    if explicit := os.getenv("STT_LANGUAGE", "").strip():
+        return explicit
+    return MULTI_LANGUAGE if os.getenv("STT_MULTI_LANGUAGE", "").strip() in ("1", "true") else "gu-IN"
+
+
 def live_headers(keyterms: list[str] | None = None) -> dict[str, str]:
     s = get_settings()
     headers = {
         "x-api-key-id": s.gnani_api_key,
         "model": "prisma-v3.0",
-        # Exactly one locale on this endpoint; Hindi and English words come back in Gujarati script,
-        # which Gemini reads fine.
-        "language_code": os.getenv("STT_LANGUAGE", "gu-IN"),
+        "language_code": stt_languages(),
         "format": "transcribe",  # amounts and dates as digits
         "x-sample-rate": str(TTS_SAMPLE_RATE),
         # A phone conversation: people pause mid-sentence ("15 તારીખે... કરી દઈશ").
